@@ -1,8 +1,16 @@
 import './style.css'
 import * as THREE from 'three'
+import {getProject, types} from '@theatre/core'
+import projectState from './state.json'
 
-// import studio from '@theatre/studio'
-// import { getProject } from '@theatre/core'
+if (import.meta.env.DEV) {
+  void import('@theatre/studio').then(({default: studio}) => {
+    studio.initialize()
+  })
+}
+
+const project = getProject('THREE.js x Theatre.js', {state: projectState})
+const sheet = project.sheet('Animated scene')
 
 /**
  * Camera
@@ -35,6 +43,26 @@ const mesh = new THREE.Mesh(geometry, material)
 mesh.castShadow = true
 mesh.receiveShadow = true
 scene.add(mesh)
+
+const torusKnotObj = sheet.object('Torus Knot', {
+  rotation: types.compound({
+    x: types.number(mesh.rotation.x, {range: [-2, 2]}),
+    y: types.number(mesh.rotation.y, {range: [-2, 2]}),
+    z: types.number(mesh.rotation.z, {range: [-2, 2]}),
+  }),
+  wireframe: material.wireframe,
+})
+
+torusKnotObj.onValuesChange((values) => {
+  const {x, y, z} = values.rotation
+
+  mesh.rotation.set(x * Math.PI, y * Math.PI, z * Math.PI)
+  material.wireframe = values.wireframe
+})
+
+void project.ready.then(() => {
+  void sheet.sequence.play({iterationCount: Infinity})
+})
 
 /*
  * Lights
@@ -111,11 +139,3 @@ window.addEventListener(
   },
   false,
 )
-
-
-// studio.initialize()
-// Create a project for the animation
-// const project = getProject('THREE.js x Theatre.js')
-// Create a sheet
-// const sheet = project.sheet('Animated scene')
-
