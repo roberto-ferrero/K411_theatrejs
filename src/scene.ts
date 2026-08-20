@@ -26,6 +26,15 @@ export function createThreeScene(container: HTMLElement): ThreeSceneContext {
   torusKnot.receiveShadow = true
   scene.add(torusKnot)
 
+  const groundGrid = new THREE.GridHelper(100, 20, '#777777', '#3f3f3f')
+  groundGrid.name = 'Ground Grid'
+  groundGrid.position.y = -15
+  scene.add(groundGrid)
+
+  const axesHelper = new THREE.AxesHelper(15)
+  axesHelper.name = 'World Axes'
+  scene.add(axesHelper)
+
   const ambientLight = new THREE.AmbientLight('#ffffff', 0.5)
   scene.add(ambientLight)
 
@@ -83,8 +92,20 @@ export function createThreeScene(container: HTMLElement): ThreeSceneContext {
       resizeObserver.disconnect()
       geometry.dispose()
       material.dispose()
+      groundGrid.geometry.dispose()
+      disposeMaterial(groundGrid.material)
+      axesHelper.geometry.dispose()
+      disposeMaterial(axesHelper.material)
       renderer.dispose()
       renderer.domElement.remove()
     },
   }
+}
+
+function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
+  if (Array.isArray(material)) {
+    for (const item of material) item.dispose()
+    return
+  }
+  material.dispose()
 }
