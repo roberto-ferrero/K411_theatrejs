@@ -86,6 +86,18 @@ Los tipos de props implementados son shorthand, `number`, `boolean`, `string`,
 `stringLiteral`, `compound`, `rgba`, `image` y `file`. Los tipos simples admiten
 interpoladores personalizados cuando corresponde.
 
+La vista HTML muestra a la derecha de cada propiedad primitiva su valor evaluado
+en el playhead. El control sigue estas reglas:
+
+- Durante una interpolación es informativo y de solo lectura.
+- Cuando el playhead coincide con un keyframe, permite editar el valor de ese
+  keyframe mediante una transacción reversible.
+- Una propiedad no secuenciada permite editar su static override.
+- Seleccionar, crear o arrastrar un keyframe sincroniza el playhead con él.
+- `Enter` o blur confirman; `Escape` cancela.
+- Los números se muestran con un máximo de tres decimales. El modelo conserva la
+  precisión introducida por el usuario.
+
 Eventos del núcleo implementados:
 
 - `document:change` y `document:preview`.

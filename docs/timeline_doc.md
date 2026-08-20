@@ -1173,6 +1173,24 @@ Object
    └─ Leaf Prop / Track
 ```
 
+### Property Value Cell
+
+Celda situada a la derecha de una `Tree Row` primitiva. Muestra el valor evaluado
+de la propiedad en la posición del playhead. Es una proyección del modelo y no un
+segundo estado de datos.
+
+Su modo depende de la procedencia del valor:
+
+- `readonly`: el playhead está dentro de un segmento interpolado; sólo muestra el
+  resultado del evaluador.
+- `keyframe`: el playhead coincide con un keyframe; editar la celda modifica
+  `keyframe.value` mediante una transacción.
+- `static`: la propiedad no tiene track; editar la celda modifica su static
+  override.
+
+El modo debe calcularse fuera del renderer para que una futura vista WebGL pueda
+aplicar exactamente las mismas reglas de edición que la vista HTML.
+
 ### Row Height
 
 Altura de una fila. Es necesaria para layout, virtualización y hit testing.

@@ -161,6 +161,10 @@ export class TimelineObject<
     return sanitizeValueWithSchema(this.schema, evaluated)
   }
 
+  getProperty(path: PropertyPath): TimelinePropertyRef | undefined {
+    return findPropertyRef(this.props, path)
+  }
+
   set initialValue(value: Partial<PropsValue<Props>>) {
     this.initialDefaults = sanitizeValueWithSchema(this.schema, value)
     this.composition.timeline.notifyObjectConfigurationChanged(this.composition.id)

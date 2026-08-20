@@ -41,6 +41,17 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    `editor.forgetObject()` elimina overrides y tracks mediante una transacción
    reversible.
 
+### Decisiones de valores en las layers
+
+1. Toda propiedad primitiva muestra su valor evaluado a la derecha de la layer.
+2. Un valor interpolado se muestra como solo lectura.
+3. El valor sólo es editable como keyframe cuando el playhead coincide con él.
+4. Seleccionar, crear o arrastrar un keyframe mueve también el playhead.
+5. Las propiedades sin track son editables y modifican su static override.
+6. `Enter` y blur confirman el cambio; `Escape` lo cancela.
+7. Los números se muestran con hasta tres decimales sin redondear el valor
+   almacenado, salvo que el usuario confirme explícitamente un valor nuevo.
+
 ## Funcionalidades completadas
 
 ### Modelo y compatibilidad
@@ -77,6 +88,12 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Drag de playhead y keyframes con snapping a frames.
 - [x] Alta por doble click y borrado con `Delete`.
 - [x] Exportación manual.
+- [x] Valor evaluado visible a la derecha de cada propiedad primitiva.
+- [x] Valor interpolado de solo lectura.
+- [x] Edición inline del valor de un keyframe cuando coincide con el playhead.
+- [x] Edición inline de static overrides.
+- [x] Seleccionar o arrastrar un keyframe sincroniza el playhead.
+- [x] Confirmación con `Enter`/blur, cancelación con `Escape` y undo/redo.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -100,7 +117,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
 
-La suite al cerrar este bloque contiene 24 pruebas. `npm test` y
+La suite al cerrar este bloque contiene 27 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -131,7 +148,8 @@ La suite al cerrar este bloque contiene 24 pruebas. `npm test` y
 
 ### Edición de valores y curvas
 
-- [ ] Editor inline de tiempo y valor.
+- [x] Editor inline de valor para keyframes y static overrides.
+- [ ] Editor inline de tiempo del keyframe.
 - [ ] Curve Editor emergente con handles manuales.
 - [ ] Graph Editor redimensionable.
 - [ ] Curvas escalares y representación de valores no escalares.

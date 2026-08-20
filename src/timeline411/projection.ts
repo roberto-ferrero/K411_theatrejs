@@ -1,9 +1,17 @@
 import type {
+  EvaluatedSheet,
+  KeyframeAddress,
   SerializableMap,
+  SerializableValue,
   TheatreKeyframe,
   TimelineDocument,
 } from './model'
-import {decodePropertyPath, encodePropertyPath, isSerializableMap} from './paths'
+import {
+  decodePropertyPath,
+  encodePropertyPath,
+  getValueAtPath,
+  isSerializableMap,
+} from './paths'
 
 export type TimelineRowKind = 'object' | 'group' | 'track' | 'static'
 
@@ -16,6 +24,18 @@ export interface TimelineRow {
   readonly path: readonly string[]
   readonly trackId?: string
   readonly trackIds: readonly string[]
+}
+
+export type TimelineRowValueMode =
+  | 'hidden'
+  | 'readonly'
+  | 'static'
+  | 'keyframe'
+
+export interface TimelineRowValueProjection {
+  readonly mode: TimelineRowValueMode
+  readonly value?: SerializableValue
+  readonly keyframe?: KeyframeAddress
 }
 
 interface MutableRowNode {
@@ -86,6 +106,40 @@ export function collectRowKeyframes(
     }
   }
   return [...byPosition.values()].sort((left, right) => left.position - right.position)
+}
+
+export function projectTimelineRowValue(
+  document: TimelineDocument,
+  sheetId: string,
+  row: TimelineRow,
+  position: number,
+  evaluated: EvaluatedSheet,
+): TimelineRowValueProjection {
+  if ((row.kind !== 'track' && row.kind !== 'static') || row.path.length === 0) {
+    return {mode: 'hidden'}
+  }
+
+  const value = getValueAtPath(evaluated.objects[row.objectKey] ?? {}, row.path)
+  if (!row.trackId) return {mode: 'static', value}
+
+  const track =
+    document.sheetsById[sheetId]?.sequence?.tracksByObject[row.objectKey]
+      ?.trackData[row.trackId]
+  const keyframe = track?.keyframes.find(
+    (candidate) => Math.abs(candidate.position - position) < 1e-6,
+  )
+  if (!keyframe) return {mode: 'readonly', value}
+
+  return {
+    mode: 'keyframe',
+    value,
+    keyframe: {
+      sheetId,
+      objectKey: row.objectKey,
+      trackId: row.trackId,
+      keyframeId: keyframe.id,
+    },
+  }
 }
 
 export function timeToX(time: number, duration: number, width: number): number {

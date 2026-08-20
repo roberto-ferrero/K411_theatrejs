@@ -4,19 +4,24 @@ import {TypedEventEmitter} from './events'
 import type {
   EasingPreset,
   KeyframeAddress,
+  SerializableValue,
   TheatreBasicKeyframedTrack,
   TimelineDocument,
   TrackAddress,
 } from './model'
+import type {TimelinePropertyRef} from './objectApi'
+import {isSerializableMap} from './paths'
+import type {TimelinePropTypeConfig} from './propTypes'
 import {
   buildTimelineRows,
   collectRowKeyframes,
   createGridTicks,
+  projectTimelineRowValue,
   snapToFrame,
   timeToX,
   xToTime,
 } from './projection'
-import type {TimelineRow} from './projection'
+import type {TimelineRow, TimelineRowValueProjection} from './projection'
 import type {EditingGesture} from './store'
 import {Timeline411} from './timeline'
 
@@ -50,6 +55,8 @@ export class Timeline411HtmlView {
   private cancelPointerInteraction?: () => void
   private treeWidth = 240
   private surfaceWidth = 1
+  private currentRows: readonly TimelineRow[] = []
+  private readonly treeRowElements = new Map<string, HTMLElement>()
   private readonly unsubscribers: Array<() => void> = []
 
   constructor(
@@ -77,7 +84,9 @@ export class Timeline411HtmlView {
 
     this.unsubscribers.push(
       this.timeline.store.subscribe(() => this.render(), false),
-      this.timeline.player.subscribe(() => this.updatePlayback(), false),
+      this.timeline
+        .getPlayer(this.sheetId)
+        .subscribe(() => this.updatePlayback(), false),
       this.timeline.on('history:change', () => this.updateHistory()),
     )
     this.root.addEventListener('keydown', this.onKeyDown)
@@ -166,8 +175,9 @@ export class Timeline411HtmlView {
 
     const playButton = createToolbarButton('▶', 'Reproducir')
     playButton.addEventListener('click', () => {
-      if (this.timeline.player.playing) this.timeline.player.pause()
-      else this.timeline.player.play({loop: true})
+      const player = this.timeline.getPlayer(this.sheetId)
+      if (player.playing) player.pause()
+      else player.play({loop: true})
     })
     this.playButton = playButton
 
@@ -178,7 +188,7 @@ export class Timeline411HtmlView {
     timeInput.step = '0.001'
     timeInput.setAttribute('aria-label', 'Posición actual en segundos')
     timeInput.addEventListener('change', () => {
-      this.timeline.player.seek(Number(timeInput.value))
+      this.timeline.getPlayer(this.sheetId).seek(Number(timeInput.value))
     })
     this.timeInput = timeInput
 
@@ -249,6 +259,7 @@ export class Timeline411HtmlView {
   private render(): void {
     if (!this.root || !this.treeRows || !this.timelineScroll || !this.surface) return
     const rows = buildTimelineRows(this.timeline.document, this.sheetId)
+    this.currentRows = rows
     const duration = this.timeline.getDuration(this.sheetId)
     const availableWidth = Math.max(1, this.timelineScroll.clientWidth)
     this.surfaceWidth = Math.max(availableWidth, duration * pixelsPerSecond)
@@ -258,11 +269,27 @@ export class Timeline411HtmlView {
     this.surface.style.height = `${Math.max(contentHeight, this.timelineScroll.clientHeight)}px`
     this.surface.replaceChildren()
     this.treeRows.replaceChildren()
+    this.treeRowElements.clear()
 
     const treeSurface = document.createElement('div')
     treeSurface.className = 'k411-timeline-tree__surface'
     treeSurface.style.height = `${rows.length * rowHeight}px`
-    for (const row of rows) treeSurface.appendChild(this.createTreeRow(row))
+    const position = this.timeline.getPlayer(this.sheetId).position
+    const evaluated = this.timeline.evaluate(this.sheetId, position)
+    for (const row of rows) {
+      treeSurface.appendChild(
+        this.createTreeRow(
+          row,
+          projectTimelineRowValue(
+            this.timeline.document,
+            this.sheetId,
+            row,
+            position,
+            evaluated,
+          ),
+        ),
+      )
+    }
     this.treeRows.appendChild(treeSurface)
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -354,7 +381,10 @@ export class Timeline411HtmlView {
         button.addEventListener('pointerdown', (event) =>
           this.startKeyframeDrag(event, address),
         )
-        button.addEventListener('click', () => this.selectKeyframe(address))
+        button.addEventListener('click', () => {
+          this.timeline.getPlayer(this.sheetId).seek(keyframe.position)
+          this.selectKeyframe(address)
+        })
         this.surface?.appendChild(button)
       }
     })
@@ -369,24 +399,33 @@ export class Timeline411HtmlView {
     this.onTimelineScroll()
   }
 
-  private createTreeRow(row: TimelineRow): HTMLElement {
+  private createTreeRow(
+    row: TimelineRow,
+    value: TimelineRowValueProjection,
+  ): HTMLElement {
     const element = document.createElement('div')
     element.className = `k411-timeline-tree-row k411-timeline-tree-row--${row.kind}`
     element.style.height = `${rowHeight}px`
     element.style.paddingLeft = `${10 + row.depth * 16}px`
+    element.dataset.rowId = row.id
 
     const icon = document.createElement('span')
     icon.className = 'k411-timeline-tree-row__icon'
     icon.textContent = row.kind === 'object' ? '◆' : row.kind === 'group' ? '▾' : '·'
     const label = document.createElement('span')
+    label.className = 'k411-timeline-tree-row__label'
     label.textContent = row.label
-    element.append(icon, label)
+    const valueCell = document.createElement('span')
+    valueCell.className = 'k411-timeline-tree-row__value'
+    element.append(icon, label, valueCell)
+    this.treeRowElements.set(row.id, element)
+    this.renderRowValue(valueCell, row, value)
     return element
   }
 
   private updatePlayback(): void {
     if (!this.playButton || !this.timeInput || !this.surface) return
-    const state = this.timeline.player.snapshot
+    const state = this.timeline.getPlayer(this.sheetId).snapshot
     this.playButton.textContent = state.playing ? '❚❚' : '▶'
     this.playButton.title = state.playing ? 'Pausar' : 'Reproducir'
     if (document.activeElement !== this.timeInput) {
@@ -402,6 +441,170 @@ export class Timeline411HtmlView {
         this.surfaceWidth,
       )}px`
     }
+    this.updateTreeValues()
+  }
+
+  private updateTreeValues(): void {
+    if (!this.treeRows || this.currentRows.length === 0) return
+    const position = this.timeline.getPlayer(this.sheetId).position
+    const evaluated = this.timeline.evaluate(this.sheetId, position)
+    for (const row of this.currentRows) {
+      const valueCell = this.treeRowElements
+        .get(row.id)
+        ?.querySelector<HTMLElement>('.k411-timeline-tree-row__value')
+      if (!valueCell) continue
+      this.renderRowValue(
+        valueCell,
+        row,
+        projectTimelineRowValue(
+          this.timeline.document,
+          this.sheetId,
+          row,
+          position,
+          evaluated,
+        ),
+      )
+    }
+  }
+
+  private renderRowValue(
+    cell: HTMLElement,
+    row: TimelineRow,
+    projection: TimelineRowValueProjection,
+  ): void {
+    if (cell.contains(document.activeElement)) return
+    const property = this.getPropertyRef(row)
+    const formatted = formatPropertyValue(projection.value, property?.config)
+    const signature = JSON.stringify([
+      projection.mode,
+      formatted,
+      projection.keyframe?.keyframeId,
+    ])
+    if (cell.dataset.valueSignature === signature) return
+    cell.dataset.valueSignature = signature
+    cell.classList.toggle(
+      'k411-timeline-tree-row__value--editable',
+      projection.mode === 'static' || projection.mode === 'keyframe',
+    )
+    cell.classList.toggle(
+      'k411-timeline-tree-row__value--keyframe',
+      projection.mode === 'keyframe',
+    )
+    cell.replaceChildren()
+
+    if (projection.mode === 'hidden') return
+    if (projection.mode === 'readonly') {
+      const output = document.createElement('span')
+      output.className = 'k411-timeline-value-output'
+      output.textContent = formatted
+      output.title = `Valor interpolado: ${fullValueLabel(projection.value)}`
+      output.setAttribute('aria-label', `${row.label}: valor interpolado de solo lectura`)
+      cell.appendChild(output)
+      return
+    }
+
+    const editor = createValueEditor(projection.value, property?.config)
+    editor.element.classList.add('k411-timeline-value-editor')
+    editor.element.setAttribute('aria-label', `Editar valor de ${row.label}`)
+    editor.element.title =
+      projection.mode === 'keyframe'
+        ? 'Editar valor del keyframe'
+        : 'Editar valor estático'
+
+    let dirty = false
+    let finished = false
+    editor.element.addEventListener('input', () => {
+      dirty = true
+    })
+    const finish = (commit: boolean): void => {
+      if (finished) return
+      if (commit && dirty) {
+        try {
+          if (!this.commitRowValue(row, projection, property, editor.read())) return
+        } catch (error) {
+          console.warn(error)
+          return
+        }
+      }
+      finished = true
+      if (!commit) cell.dataset.valueSignature = ''
+    }
+    editor.element.addEventListener('keydown', (event) => {
+      const keyboardEvent = event as KeyboardEvent
+      keyboardEvent.stopPropagation()
+      if (keyboardEvent.key === 'Enter') {
+        keyboardEvent.preventDefault()
+        finish(true)
+        editor.element.blur()
+      } else if (keyboardEvent.key === 'Escape') {
+        keyboardEvent.preventDefault()
+        finish(false)
+        editor.element.blur()
+        this.updateTreeValues()
+      }
+    })
+    editor.element.addEventListener('blur', () => finish(true))
+    if (
+      editor.element instanceof HTMLSelectElement ||
+      (editor.element instanceof HTMLInputElement &&
+        editor.element.type === 'checkbox')
+    ) {
+      editor.element.addEventListener('change', () => {
+        dirty = true
+        finish(true)
+      })
+    }
+    cell.appendChild(editor.element)
+  }
+
+  private commitRowValue(
+    row: TimelineRow,
+    projection: TimelineRowValueProjection,
+    property: TimelinePropertyRef | undefined,
+    rawValue: unknown,
+  ): boolean {
+    try {
+      const sanitized = property ? property.config.sanitize(rawValue) : rawValue
+      if (typeof sanitized === 'undefined') {
+        throw new Error(`Valor inválido para ${row.path.join('.')}`)
+      }
+      const value = sanitized as SerializableValue
+      if (projection.mode === 'keyframe' && projection.keyframe) {
+        this.timeline.editor.transaction(
+          (transaction) => {
+            transaction.updateKeyframe(projection.keyframe as KeyframeAddress, {
+              value,
+            })
+          },
+          {label: `Editar ${row.label}`},
+        )
+      } else if (projection.mode === 'static') {
+        if (property) {
+          this.timeline.editor.transaction(
+            (transaction) => transaction.set(property, value),
+            {label: `Editar ${row.label}`},
+          )
+        } else {
+          this.timeline.store.transaction(`Editar ${row.label}`, (transaction) => {
+            transaction.setStaticValue(
+              {sheetId: this.sheetId, objectKey: row.objectKey, path: row.path},
+              value,
+            )
+          })
+        }
+      }
+      return true
+    } catch (error) {
+      console.warn(error)
+      return false
+    }
+  }
+
+  private getPropertyRef(row: TimelineRow): TimelinePropertyRef | undefined {
+    return this.timeline
+      .getComposition(this.sheetId)
+      ?.getObject(row.objectKey)
+      ?.getProperty(row.path)
   }
 
   private updateHistory(): void {
@@ -445,6 +648,7 @@ export class Timeline411HtmlView {
         {position: time, value},
       )
     })
+    this.timeline.getPlayer(this.sheetId).seek(time)
     this.selectKeyframe({
       sheetId: this.sheetId,
       objectKey: row.objectKey,
@@ -460,7 +664,12 @@ export class Timeline411HtmlView {
     if (event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
-    this.timeline.player.pause()
+    const player = this.timeline.getPlayer(this.sheetId)
+    player.pause()
+    const selectedKeyframe = getTrack(this.timeline.document, address).keyframes.find(
+      (keyframe) => keyframe.id === address.keyframeId,
+    )
+    if (selectedKeyframe) player.seek(selectedKeyframe.position)
     this.selected = address
     this.interpolationSelect && (this.interpolationSelect.disabled = false)
     this.events.emit('selection:change', {selection: address})
@@ -473,6 +682,7 @@ export class Timeline411HtmlView {
       gesture.update((transaction) => {
         transaction.updateKeyframe(address, {position})
       })
+      player.seek(position)
     }
     const finish = (): void => {
       window.removeEventListener('pointermove', move)
@@ -503,9 +713,11 @@ export class Timeline411HtmlView {
   private readonly startPlayheadDrag = (event: PointerEvent): void => {
     if (event.button !== 0) return
     event.preventDefault()
-    this.timeline.player.pause()
+    this.timeline.getPlayer(this.sheetId).pause()
     const move = (moveEvent: PointerEvent): void => {
-      this.timeline.player.seek(this.timeFromClientX(moveEvent.clientX, true))
+      this.timeline
+        .getPlayer(this.sheetId)
+        .seek(this.timeFromClientX(moveEvent.clientX, true))
     }
     const finish = (): void => {
       window.removeEventListener('pointermove', move)
@@ -595,6 +807,130 @@ export class Timeline411HtmlView {
     anchor.click()
     setTimeout(() => URL.revokeObjectURL(url), 0)
   }
+}
+
+interface ValueEditor {
+  readonly element: HTMLInputElement | HTMLSelectElement
+  read(): unknown
+}
+
+function createValueEditor(
+  value: SerializableValue | undefined,
+  config?: TimelinePropTypeConfig,
+): ValueEditor {
+  if (config?.type === 'stringLiteral') {
+    const select = document.createElement('select')
+    for (const [optionValue, label] of Object.entries(config.valuesAndLabels)) {
+      const option = document.createElement('option')
+      option.value = optionValue
+      option.textContent = label
+      option.selected = optionValue === value
+      select.appendChild(option)
+    }
+    return {element: select, read: () => select.value}
+  }
+
+  if (config?.type === 'boolean' || (!config && typeof value === 'boolean')) {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.checked = value === true
+    return {element: input, read: () => input.checked}
+  }
+
+  const input = document.createElement('input')
+  input.autocomplete = 'off'
+  if (config?.type === 'number' || (!config && typeof value === 'number')) {
+    input.type = 'number'
+    input.inputMode = 'decimal'
+    input.step =
+      config?.type === 'number' && config.nudgeMultiplier
+        ? String(config.nudgeMultiplier)
+        : 'any'
+    input.value = typeof value === 'number' ? formatNumber(value) : ''
+    return {
+      element: input,
+      read: () => {
+        const parsed = Number(input.value)
+        if (input.value.trim() === '' || !Number.isFinite(parsed)) {
+          throw new Error('El valor numérico debe ser finito')
+        }
+        return parsed
+      },
+    }
+  }
+
+  if (config?.type === 'rgba') {
+    input.type = 'text'
+    input.value = isSerializableMap(value)
+      ? [value.r, value.g, value.b, value.a].map(formatUnknownNumber).join(', ')
+      : ''
+    return {
+      element: input,
+      read: () => {
+        const channels = input.value.split(',').map((channel) => Number(channel.trim()))
+        if (channels.length !== 4 || channels.some((channel) => !Number.isFinite(channel))) {
+          throw new Error('RGBA necesita cuatro números: r, g, b, a')
+        }
+        return {r: channels[0], g: channels[1], b: channels[2], a: channels[3]}
+      },
+    }
+  }
+
+  if (config?.type === 'image' || config?.type === 'file') {
+    input.type = 'text'
+    input.value = isSerializableMap(value) && typeof value.id === 'string' ? value.id : ''
+    return {
+      element: input,
+      read: () =>
+        input.value === ''
+          ? {type: config.type}
+          : {type: config.type, id: input.value},
+    }
+  }
+
+  if (config?.type === 'compound' || isSerializableMap(value)) {
+    input.type = 'text'
+    input.value = JSON.stringify(value ?? {})
+    return {element: input, read: () => JSON.parse(input.value) as unknown}
+  }
+
+  input.type = 'text'
+  input.value = typeof value === 'string' ? value : ''
+  return {element: input, read: () => input.value}
+}
+
+function formatPropertyValue(
+  value: SerializableValue | undefined,
+  config?: TimelinePropTypeConfig,
+): string {
+  if (typeof value === 'undefined') return '—'
+  if (typeof value === 'number') return formatNumber(value)
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'string') return value
+  if (config?.type === 'rgba' && isSerializableMap(value)) {
+    return [value.r, value.g, value.b, value.a].map(formatUnknownNumber).join(', ')
+  }
+  if (
+    (config?.type === 'image' || config?.type === 'file') &&
+    isSerializableMap(value)
+  ) {
+    return typeof value.id === 'string' ? value.id : '—'
+  }
+  return JSON.stringify(value) ?? '—'
+}
+
+function formatNumber(value: number): string {
+  const rounded = Number(value.toFixed(3))
+  return Object.is(rounded, -0) ? '0' : String(rounded)
+}
+
+function formatUnknownNumber(value: SerializableValue | undefined): string {
+  return typeof value === 'number' ? formatNumber(value) : '0'
+}
+
+function fullValueLabel(value: SerializableValue | undefined): string {
+  if (typeof value === 'undefined') return 'sin valor'
+  return typeof value === 'string' ? value : (JSON.stringify(value) ?? 'sin valor')
 }
 
 function createToolbarButton(label: string, title: string): HTMLButtonElement {
