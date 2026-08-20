@@ -15,30 +15,46 @@ import type {TimelinePropTypeConfig} from './propTypes'
 import {
   buildTimelineRows,
   collectRowKeyframes,
-  createGridTicks,
+  createViewportGridTicks,
   projectTimelineRowValue,
   snapToFrame,
-  timeToX,
-  xToTime,
 } from './projection'
 import type {TimelineRow, TimelineRowValueProjection} from './projection'
 import type {EditingGesture} from './store'
 import {Timeline411} from './timeline'
+import type {
+  TimelineViewportChange,
+  TimelineViewportChangeReason,
+} from './viewport'
+import {
+  getViewportScrollLeft,
+  getViewportVirtualWidth,
+  scrollLeftToVisibleStart,
+  timeToViewportSurfaceX,
+  TimelineViewport,
+  viewportXToTime,
+} from './viewport'
 
 const rowHeight = 28
 const rulerHeight = 30
-const pixelsPerSecond = 150
 const minimumWidth = 640
 const minimumHeight = 240
 
 export interface Timeline411ViewEvents {
   'selection:change': {selection?: KeyframeAddress}
   'view:resize': {width: number; height: number}
-  'viewport:change': {scrollLeft: number; scrollTop: number}
+  'viewport:change': {
+    scrollLeft: number
+    scrollTop: number
+    visibleRange: readonly [number, number]
+    zoom: number
+    reason: TimelineViewportChangeReason
+  }
   'panel:resize': {width: number}
 }
 
 export class Timeline411HtmlView {
+  readonly viewport: TimelineViewport
   private readonly events = new TypedEventEmitter<Timeline411ViewEvents>()
   private root?: HTMLElement
   private treeRows?: HTMLElement
@@ -48,6 +64,7 @@ export class Timeline411HtmlView {
   private undoButton?: HTMLButtonElement
   private redoButton?: HTMLButtonElement
   private timeInput?: HTMLInputElement
+  private durationInput?: HTMLInputElement
   private interpolationSelect?: HTMLSelectElement
   private resizeObserver?: ResizeObserver
   private selected?: KeyframeAddress
@@ -55,6 +72,9 @@ export class Timeline411HtmlView {
   private cancelPointerInteraction?: () => void
   private treeWidth = 240
   private surfaceWidth = 1
+  private spacePressed = false
+  private lastScrollTop = 0
+  private durationEditDirty = false
   private currentRows: readonly TimelineRow[] = []
   private readonly treeRowElements = new Map<string, HTMLElement>()
   private readonly unsubscribers: Array<() => void> = []
@@ -62,7 +82,12 @@ export class Timeline411HtmlView {
   constructor(
     private readonly timeline: Timeline411,
     private readonly sheetId: string,
-  ) {}
+  ) {
+    this.viewport = new TimelineViewport({
+      duration: timeline.getDuration(sheetId),
+      fps: timeline.getFps(sheetId),
+    })
+  }
 
   mount(target: string | HTMLElement): void {
     if (this.root) throw new Error('La vista Timeline 411 ya está montada')
@@ -72,9 +97,10 @@ export class Timeline411HtmlView {
     }
     this.root = this.createRoot()
     container.appendChild(this.root)
+    this.syncViewportMetrics()
 
     this.resizeObserver = new ResizeObserver(() => {
-      this.render()
+      if (!this.syncViewportMetrics()) this.render()
       this.events.emit('view:resize', {
         width: container.clientWidth,
         height: container.clientHeight,
@@ -83,13 +109,17 @@ export class Timeline411HtmlView {
     this.resizeObserver.observe(container)
 
     this.unsubscribers.push(
-      this.timeline.store.subscribe(() => this.render(), false),
+      this.timeline.store.subscribe(() => {
+        if (!this.syncViewportMetrics()) this.render()
+      }, false),
       this.timeline
         .getPlayer(this.sheetId)
         .subscribe(() => this.updatePlayback(), false),
       this.timeline.on('history:change', () => this.updateHistory()),
+      this.viewport.onChange(this.onViewportChange),
     )
     this.root.addEventListener('keydown', this.onKeyDown)
+    window.addEventListener('keyup', this.onKeyUp)
     this.render()
     this.updatePlayback()
     this.updateHistory()
@@ -101,6 +131,7 @@ export class Timeline411HtmlView {
     this.resizeObserver?.disconnect()
     this.resizeObserver = undefined
     this.root?.removeEventListener('keydown', this.onKeyDown)
+    window.removeEventListener('keyup', this.onKeyUp)
     this.root?.remove()
     this.root = undefined
   }
@@ -152,6 +183,8 @@ export class Timeline411HtmlView {
     const timelineScroll = document.createElement('div')
     timelineScroll.className = 'k411-timeline-scroll'
     timelineScroll.addEventListener('scroll', this.onTimelineScroll)
+    timelineScroll.addEventListener('wheel', this.onTimelineWheel, {passive: false})
+    timelineScroll.addEventListener('pointerdown', this.startPanDrag)
     this.timelineScroll = timelineScroll
 
     const surface = document.createElement('div')
@@ -192,9 +225,45 @@ export class Timeline411HtmlView {
     })
     this.timeInput = timeInput
 
-    const duration = document.createElement('span')
+    const duration = document.createElement('label')
     duration.className = 'k411-timeline-duration'
-    duration.textContent = `/ ${this.timeline.getDuration(this.sheetId).toFixed(2)}s`
+    const durationSeparator = document.createElement('span')
+    durationSeparator.textContent = '/'
+    const durationInput = document.createElement('input')
+    durationInput.className = 'k411-timeline-duration-input'
+    durationInput.type = 'number'
+    durationInput.min = '0.000001'
+    durationInput.step = '0.001'
+    durationInput.setAttribute('aria-label', 'Duración total en segundos')
+    durationInput.title = 'Editar duración total'
+    durationInput.addEventListener('focus', () => {
+      if (!this.durationEditDirty) durationInput.setCustomValidity('')
+    })
+    durationInput.addEventListener('input', () => {
+      this.durationEditDirty = true
+      durationInput.setCustomValidity('')
+    })
+    durationInput.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        if (this.commitDurationInput()) durationInput.blur()
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        this.durationEditDirty = false
+        durationInput.setCustomValidity('')
+        this.updateDurationInput(true)
+        durationInput.blur()
+      }
+    })
+    durationInput.addEventListener('blur', () => {
+      if (this.durationEditDirty) this.commitDurationInput()
+    })
+    const durationSuffix = document.createElement('span')
+    durationSuffix.textContent = 's'
+    duration.append(durationSeparator, durationInput, durationSuffix)
+    this.durationInput = durationInput
+    this.updateDurationInput(true)
 
     const undoButton = createToolbarButton('↶', 'Deshacer')
     undoButton.addEventListener('click', () => this.timeline.store.undo())
@@ -258,15 +327,17 @@ export class Timeline411HtmlView {
 
   private render(): void {
     if (!this.root || !this.treeRows || !this.timelineScroll || !this.surface) return
+    this.updateDurationInput()
     const rows = buildTimelineRows(this.timeline.document, this.sheetId)
     this.currentRows = rows
-    const duration = this.timeline.getDuration(this.sheetId)
-    const availableWidth = Math.max(1, this.timelineScroll.clientWidth)
-    this.surfaceWidth = Math.max(availableWidth, duration * pixelsPerSecond)
+    const viewport = this.viewport.snapshot
+    const desiredScrollLeft = getViewportScrollLeft(viewport)
+    this.surfaceWidth = getViewportVirtualWidth(viewport)
     const contentHeight = rulerHeight + rows.length * rowHeight
 
     this.surface.style.width = `${this.surfaceWidth}px`
     this.surface.style.height = `${Math.max(contentHeight, this.timelineScroll.clientHeight)}px`
+    this.timelineScroll.scrollLeft = desiredScrollLeft
     this.surface.replaceChildren()
     this.treeRows.replaceChildren()
     this.treeRowElements.clear()
@@ -301,13 +372,15 @@ export class Timeline411HtmlView {
     const ruler = document.createElement('div')
     ruler.className = 'k411-timeline-ruler'
     ruler.addEventListener('pointerdown', this.startPlayheadDrag)
+    ruler.addEventListener('dblclick', () => this.viewport.fitToSequence())
     this.surface.appendChild(ruler)
 
-    const fps = this.timeline.getFps(this.sheetId)
-    for (const tick of createGridTicks(duration, this.surfaceWidth, fps)) {
+    const gridOffset = desiredScrollLeft
+    for (const tick of createViewportGridTicks(viewport)) {
+      const tickX = gridOffset + tick.x
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-      line.setAttribute('x1', String(tick.x))
-      line.setAttribute('x2', String(tick.x))
+      line.setAttribute('x1', String(tickX))
+      line.setAttribute('x2', String(tickX))
       line.setAttribute('y1', '0')
       line.setAttribute('y2', String(Math.max(contentHeight, this.timelineScroll.clientHeight)))
       line.classList.add(
@@ -317,7 +390,7 @@ export class Timeline411HtmlView {
 
       const label = document.createElement('span')
       label.className = 'k411-timeline-ruler__tick'
-      label.style.left = `${tick.x}px`
+      label.style.left = `${tickX}px`
       label.textContent = tick.label
       ruler.appendChild(label)
     }
@@ -339,8 +412,8 @@ export class Timeline411HtmlView {
           const left = keyframes[keyframeIndex]
           const right = keyframes[keyframeIndex + 1]
           const connector = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-          connector.setAttribute('x1', String(timeToX(left.position, duration, this.surfaceWidth)))
-          connector.setAttribute('x2', String(timeToX(right.position, duration, this.surfaceWidth)))
+          connector.setAttribute('x1', String(timeToViewportSurfaceX(left.position, viewport)))
+          connector.setAttribute('x2', String(timeToViewportSurfaceX(right.position, viewport)))
           connector.setAttribute('y1', String(y + rowHeight / 2))
           connector.setAttribute('y2', String(y + rowHeight / 2))
           connector.classList.add('k411-timeline-connector')
@@ -352,7 +425,7 @@ export class Timeline411HtmlView {
       }
 
       for (const keyframe of keyframes) {
-        const x = timeToX(keyframe.position, duration, this.surfaceWidth)
+        const x = timeToViewportSurfaceX(keyframe.position, viewport)
         if (!row.trackId) {
           const aggregate = document.createElement('span')
           aggregate.className = 'k411-timeline-keyframe k411-timeline-keyframe--aggregate'
@@ -396,7 +469,7 @@ export class Timeline411HtmlView {
     playhead.addEventListener('pointerdown', this.startPlayheadDrag)
     this.surface.appendChild(playhead)
     this.updatePlayback()
-    this.onTimelineScroll()
+    this.syncTreeScroll()
   }
 
   private createTreeRow(
@@ -435,13 +508,53 @@ export class Timeline411HtmlView {
       '.k411-timeline-playhead',
     )
     if (playhead) {
-      playhead.style.left = `${timeToX(
+      playhead.style.left = `${timeToViewportSurfaceX(
         state.position,
-        this.timeline.getDuration(this.sheetId),
-        this.surfaceWidth,
+        this.viewport.snapshot,
       )}px`
     }
     this.updateTreeValues()
+  }
+
+  private updateDurationInput(force = false): void {
+    if (!this.durationInput) return
+    if (!force && this.durationEditDirty && document.activeElement === this.durationInput) {
+      return
+    }
+    this.durationInput.value = formatDuration(
+      this.timeline.getDuration(this.sheetId),
+    )
+  }
+
+  private commitDurationInput(): boolean {
+    if (!this.durationInput) return false
+    const duration = Number(this.durationInput.value)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      this.durationInput.setCustomValidity(
+        'La duración debe ser un número mayor que cero',
+      )
+      this.durationInput.reportValidity()
+      return false
+    }
+
+    this.durationInput.setCustomValidity('')
+    this.durationEditDirty = false
+    if (Math.abs(duration - this.timeline.getDuration(this.sheetId)) > 1e-9) {
+      try {
+        this.timeline.editor.transaction(
+          (transaction) => transaction.setDuration(this.sheetId, duration),
+          {label: `Cambiar duración a ${formatDuration(duration)}s`},
+        )
+      } catch (error) {
+        this.durationEditDirty = true
+        this.durationInput.setCustomValidity('No se pudo cambiar la duración')
+        this.durationInput.reportValidity()
+        console.warn(error)
+        return false
+      }
+    }
+    this.updateDurationInput(true)
+    return true
   }
 
   private updateTreeValues(): void {
@@ -661,7 +774,7 @@ export class Timeline411HtmlView {
     event: PointerEvent,
     address: KeyframeAddress,
   ): void => {
-    if (event.button !== 0) return
+    if (this.spacePressed || event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
     const player = this.timeline.getPlayer(this.sheetId)
@@ -711,7 +824,7 @@ export class Timeline411HtmlView {
   }
 
   private readonly startPlayheadDrag = (event: PointerEvent): void => {
-    if (event.button !== 0) return
+    if (this.spacePressed || event.button !== 0) return
     event.preventDefault()
     this.timeline.getPlayer(this.sheetId).pause()
     const move = (moveEvent: PointerEvent): void => {
@@ -748,18 +861,153 @@ export class Timeline411HtmlView {
     window.addEventListener('pointerup', finish, {once: true})
   }
 
-  private readonly onTimelineScroll = (): void => {
-    if (!this.timelineScroll || !this.treeRows) return
-    this.treeRows.scrollTop = Math.max(0, this.timelineScroll.scrollTop - rulerHeight)
+  private syncViewportMetrics(): boolean {
+    if (!this.timelineScroll) return false
+    return this.viewport.setMetrics(
+      this.timeline.getDuration(this.sheetId),
+      this.timeline.getFps(this.sheetId),
+      Math.max(1, this.timelineScroll.clientWidth),
+    )
+  }
+
+  private readonly onViewportChange = (change: TimelineViewportChange): void => {
+    this.render()
+    this.emitViewportChange(change.reason)
+  }
+
+  private emitViewportChange(reason: TimelineViewportChangeReason): void {
+    if (!this.timelineScroll) return
+    const snapshot = this.viewport.snapshot
     this.events.emit('viewport:change', {
       scrollLeft: this.timelineScroll.scrollLeft,
       scrollTop: this.timelineScroll.scrollTop,
+      visibleRange: snapshot.visibleRange,
+      zoom: snapshot.zoom,
+      reason,
     })
   }
 
+  private syncTreeScroll(): void {
+    if (!this.timelineScroll || !this.treeRows) return
+    this.treeRows.scrollTop = Math.max(0, this.timelineScroll.scrollTop - rulerHeight)
+  }
+
+  private readonly onTimelineWheel = (event: WheelEvent): void => {
+    if (!this.timelineScroll) return
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault()
+      const rect = this.timelineScroll.getBoundingClientRect()
+      const anchor = viewportXToTime(
+        event.clientX - rect.left,
+        this.viewport.snapshot,
+      )
+      const factor = Math.max(
+        0.1,
+        Math.min(10, Math.exp(-normalizeWheelDelta(event.deltaY, event) * 0.002)),
+      )
+      this.viewport.zoomAt(anchor, factor)
+      return
+    }
+
+    const horizontalDelta = normalizeWheelDelta(
+      event.shiftKey ? event.deltaY : event.deltaX,
+      event,
+    )
+    if (Math.abs(horizontalDelta) < 1e-6) return
+    event.preventDefault()
+    const snapshot = this.viewport.snapshot
+    const deltaTime =
+      (horizontalDelta / snapshot.width) *
+      (snapshot.visibleEnd - snapshot.visibleStart)
+    this.viewport.panBy(deltaTime)
+  }
+
+  private readonly startPanDrag = (event: PointerEvent): void => {
+    const isMiddleButton = event.button === 1
+    const isSpaceDrag = event.button === 0 && this.spacePressed
+    if (!isMiddleButton && !isSpaceDrag) return
+    event.preventDefault()
+    event.stopPropagation()
+    this.cancelPointerInteraction?.()
+    this.root?.focus({preventScroll: true})
+
+    const initial = this.viewport.snapshot
+    const startX = event.clientX
+    const span = initial.visibleEnd - initial.visibleStart
+    this.root?.classList.add('k411-timeline-root--panning')
+
+    const move = (moveEvent: PointerEvent): void => {
+      const deltaTime = -((moveEvent.clientX - startX) / initial.width) * span
+      this.viewport.setVisibleRange(
+        initial.visibleStart + deltaTime,
+        initial.visibleEnd + deltaTime,
+        'pan',
+      )
+    }
+    const cleanup = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', cancel)
+      this.root?.classList.remove('k411-timeline-root--panning')
+      if (this.cancelPointerInteraction === cancel) {
+        this.cancelPointerInteraction = undefined
+      }
+    }
+    const finish = (): void => cleanup()
+    const cancel = (): void => {
+      cleanup()
+      if (initial.mode === 'fit') this.viewport.fitToSequence()
+      else {
+        this.viewport.setVisibleRange(
+          initial.visibleStart,
+          initial.visibleEnd,
+          'pan',
+        )
+      }
+    }
+    this.cancelPointerInteraction = cancel
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish, {once: true})
+    window.addEventListener('pointercancel', cancel, {once: true})
+  }
+
+  private readonly onTimelineScroll = (): void => {
+    if (!this.timelineScroll || !this.treeRows) return
+    this.syncTreeScroll()
+    const snapshot = this.viewport.snapshot
+    const span = snapshot.visibleEnd - snapshot.visibleStart
+    const visibleStart = scrollLeftToVisibleStart(
+      this.timelineScroll.scrollLeft,
+      snapshot,
+    )
+    const viewportChanged =
+      Math.abs(visibleStart - snapshot.visibleStart) > 1e-6
+        ? this.viewport.setVisibleRange(
+            visibleStart,
+            visibleStart + span,
+            'scroll',
+          )
+        : false
+    const verticalChanged = this.timelineScroll.scrollTop !== this.lastScrollTop
+    this.lastScrollTop = this.timelineScroll.scrollTop
+    if (!viewportChanged && verticalChanged) this.emitViewportChange('scroll')
+  }
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (isFormControl(event.target)) return
+    if (event.code === 'Space') {
+      event.preventDefault()
+      this.spacePressed = true
+      this.root?.classList.add('k411-timeline-root--pan-ready')
+      return
+    }
     if (event.key === 'Escape') {
       this.cancelActiveGesture()
+      return
+    }
+    if (event.key.toLowerCase() === 'f' && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault()
+      this.viewport.fitToSequence()
       return
     }
     if ((event.key === 'Delete' || event.key === 'Backspace') && this.selected) {
@@ -778,6 +1026,12 @@ export class Timeline411HtmlView {
     }
   }
 
+  private readonly onKeyUp = (event: KeyboardEvent): void => {
+    if (event.code !== 'Space') return
+    this.spacePressed = false
+    this.root?.classList.remove('k411-timeline-root--pan-ready')
+  }
+
   private cancelActiveGesture(): void {
     if (this.cancelPointerInteraction) this.cancelPointerInteraction()
     else if (this.activeGesture?.active) this.activeGesture.cancel()
@@ -786,13 +1040,9 @@ export class Timeline411HtmlView {
   }
 
   private timeFromClientX(clientX: number, snap: boolean): number {
-    if (!this.surface) return 0
-    const rect = this.surface.getBoundingClientRect()
-    const time = xToTime(
-      clientX - rect.left,
-      this.timeline.getDuration(this.sheetId),
-      this.surfaceWidth,
-    )
+    if (!this.timelineScroll) return 0
+    const rect = this.timelineScroll.getBoundingClientRect()
+    const time = viewportXToTime(clientX - rect.left, this.viewport.snapshot)
     return snap ? snapToFrame(time, this.timeline.getFps(this.sheetId)) : time
   }
 
@@ -924,6 +1174,10 @@ function formatNumber(value: number): string {
   return Object.is(rounded, -0) ? '0' : String(rounded)
 }
 
+function formatDuration(value: number): string {
+  return value.toFixed(3)
+}
+
 function formatUnknownNumber(value: SerializableValue | undefined): string {
   return typeof value === 'number' ? formatNumber(value) : '0'
 }
@@ -931,6 +1185,23 @@ function formatUnknownNumber(value: SerializableValue | undefined): string {
 function fullValueLabel(value: SerializableValue | undefined): string {
   if (typeof value === 'undefined') return 'sin valor'
   return typeof value === 'string' ? value : (JSON.stringify(value) ?? 'sin valor')
+}
+
+function isFormControl(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  )
+}
+
+function normalizeWheelDelta(delta: number, event: WheelEvent): number {
+  if (event.deltaMode === 1) return delta * 16
+  if (event.deltaMode === 2) {
+    return delta * Math.max(1, (event.currentTarget as HTMLElement | null)?.clientWidth ?? 800)
+  }
+  return delta
 }
 
 function createToolbarButton(label: string, title: string): HTMLButtonElement {

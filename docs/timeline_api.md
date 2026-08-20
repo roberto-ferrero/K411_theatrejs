@@ -98,6 +98,17 @@ en el playhead. El control sigue estas reglas:
 - Los números se muestran con un máximo de tres decimales. El modelo conserva la
   precisión introducida por el usuario.
 
+El viewport temporal también está implementado como estado independiente de la
+vista. Empieza encajando toda la secuencia y ofrece zoom focal, pan, rango
+visible, fit y sincronización con la scrollbar HTML. Dos vistas del mismo
+timeline no comparten viewport.
+
+La duración total se edita en la toolbar. El campo acepta un número finito mayor
+que cero, confirma con `Enter` o blur y cancela con `Escape`. La modificación usa
+`timeline.editor.transaction()` y, por tanto, participa en undo/redo. Presenta
+tres decimales sin reducir la precisión guardada. Los keyframes posteriores a
+una reducción de duración no se eliminan.
+
 Eventos del núcleo implementados:
 
 - `document:change` y `document:preview`.
@@ -932,6 +943,14 @@ interface Timeline411EditorState {
   readonly version: 1
   readonly views: Readonly<Record<string, Timeline411ViewState>>
 }
+
+interface Timeline411ViewState {
+  readonly viewport: {
+    readonly visibleRange: readonly [number, number]
+    readonly mode: 'fit' | 'manual'
+  }
+  // Futuro: paneles, filas plegadas, Focus Range y Graph Editor.
+}
 ```
 
 Persistencia recomendada:
@@ -1687,6 +1706,68 @@ WebGL para confirmar que ambos producen comandos y eventos equivalentes.
 - Cada vista conserva su propio viewport, layout, interacción y selección.
 - Shadow DOM queda desactivado inicialmente, pero la arquitectura permitirá
   incorporarlo como opción.
+
+### API de viewport implementada
+
+`Timeline411HtmlView` expone una instancia independiente de `TimelineViewport`:
+
+```ts
+const view = new Timeline411HtmlView(timeline, sheetId)
+
+view.viewport.snapshot
+view.viewport.setVisibleRange(2, 8)
+view.viewport.zoomAt(4, 1.5)
+view.viewport.panBy(0.5)
+view.viewport.fitToSequence()
+view.viewport.onChange((change) => {
+  console.log(change.reason, change.snapshot.visibleRange)
+})
+```
+
+```ts
+interface TimelineViewportSnapshot {
+  readonly visibleStart: number
+  readonly visibleEnd: number
+  readonly visibleRange: readonly [number, number]
+  readonly duration: number
+  readonly fps: number
+  readonly width: number
+  readonly zoom: number
+  readonly mode: 'fit' | 'manual'
+}
+```
+
+Interacciones HTML implementadas:
+
+- `Ctrl/Cmd + rueda`: zoom alrededor del cursor.
+- Trackpad horizontal o `Shift + rueda`: pan.
+- `Espacio + drag` o botón central: pan por arrastre.
+- `F` o doble clic en el ruler: fit de la secuencia completa.
+- Scrollbar horizontal nativa sincronizada con el visible range.
+
+El evento de vista contiene el snapshot mínimo necesario para sincronizar otros
+componentes de la aplicación anfitriona:
+
+```ts
+interface ViewportChangeEvent {
+  readonly scrollLeft: number
+  readonly scrollTop: number
+  readonly visibleRange: readonly [number, number]
+  readonly zoom: number
+  readonly reason:
+    | 'zoom'
+    | 'pan'
+    | 'scroll'
+    | 'resize'
+    | 'fit'
+    | 'programmatic'
+    | 'duration'
+}
+```
+
+El estado permanece en memoria y pertenece a la vista. Su futura persistencia se
+realizará dentro de `timeline411.editor.json`, nunca dentro de
+`animation.json`.
 
 ### Aplicación anfitriona
 

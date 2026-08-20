@@ -12,6 +12,8 @@ import {
   getValueAtPath,
   isSerializableMap,
 } from './paths'
+import type {TimelineViewportSnapshot} from './viewport'
+import {timeToViewportX} from './viewport'
 
 export type TimelineRowKind = 'object' | 'group' | 'track' | 'static'
 
@@ -162,20 +164,47 @@ export function createGridTicks(
   fps: number,
   minimumSpacing = 54,
 ): readonly GridTick[] {
-  if (duration <= 0 || width <= 0) return []
-  const pixelsPerSecond = width / duration
+  return createViewportGridTicks(
+    {
+      visibleStart: 0,
+      visibleEnd: duration,
+      visibleRange: [0, duration],
+      duration,
+      fps,
+      width,
+      zoom: 1,
+      mode: 'fit',
+    },
+    minimumSpacing,
+  )
+}
+
+export function createViewportGridTicks(
+  viewport: TimelineViewportSnapshot,
+  minimumSpacing = 54,
+): readonly GridTick[] {
+  const duration = viewport.duration
+  const width = viewport.width
+  const fps = viewport.fps
+  const visibleStart = viewport.visibleStart
+  const visibleEnd = viewport.visibleEnd
+  const visibleDuration = visibleEnd - visibleStart
+  if (duration <= 0 || width <= 0 || visibleDuration <= 0) return []
+  const pixelsPerSecond = width / visibleDuration
   const candidates = [1 / fps, 2 / fps, 5 / fps, 10 / fps, 0.5, 1, 2, 5, 10, 30, 60]
   const step =
     candidates.find((candidate) => candidate * pixelsPerSecond >= minimumSpacing) ??
-    60
+    Math.ceil(minimumSpacing / Math.max(1e-9, 60 * pixelsPerSecond)) * 60
   const ticks: GridTick[] = []
+  const first = Math.max(0, Math.ceil((visibleStart - 1e-9) / step) * step)
+  const last = Math.min(duration, visibleEnd + step * 0.001)
 
-  for (let time = 0; time <= duration + step * 0.001; time += step) {
+  for (let time = first; time <= last; time += step) {
     const rounded = Number(time.toFixed(6))
     const isWholeSecond = Math.abs(rounded - Math.round(rounded)) < 1e-6
     ticks.push({
       time: rounded,
-      x: timeToX(rounded, duration, width),
+      x: timeToViewportX(rounded, viewport),
       major: isWholeSecond,
       label: formatTimelineTime(rounded, fps),
     })

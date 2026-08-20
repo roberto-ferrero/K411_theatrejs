@@ -128,6 +128,140 @@ describe('vista Timeline 411 HTML', () => {
     view.dispose()
     timeline.dispose()
   })
+
+  it('sincroniza zoom, pan, fit, scrollbar y mantiene viewports independientes', () => {
+    document.body.insertAdjacentHTML('beforeend', '<div id="timeline-second"></div>')
+    const timeline = new Timeline411(projectState)
+    const first = new Timeline411HtmlView(timeline, 'Animated scene')
+    const second = new Timeline411HtmlView(timeline, 'Animated scene')
+    first.mount('#timeline-test')
+    second.mount('#timeline-second')
+
+    const firstScroll = document.querySelector<HTMLElement>(
+      '#timeline-test .k411-timeline-scroll',
+    )
+    if (!firstScroll) throw new Error('No se encontró el scroll temporal')
+    Object.defineProperty(firstScroll, 'clientWidth', {configurable: true, value: 600})
+    first.viewport.setMetrics(3, 30, 600)
+    second.viewport.setMetrics(3, 30, 600)
+    const reasons: string[] = []
+    first.on('viewport:change', (event) => reasons.push(event.reason))
+
+    firstScroll.dispatchEvent(
+      new WheelEvent('wheel', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 300,
+        ctrlKey: true,
+        deltaY: -350,
+      }),
+    )
+    expect(first.viewport.snapshot.zoom).toBeGreaterThan(1)
+    expect(second.viewport.snapshot.zoom).toBe(1)
+    expect(reasons).toContain('zoom')
+
+    const beforePan = first.viewport.snapshot.visibleStart
+    const root = document.querySelector<HTMLElement>(
+      '#timeline-test [data-timeline411-view]',
+    )
+    root?.dispatchEvent(
+      new KeyboardEvent('keydown', {bubbles: true, code: 'Space', key: ' '}),
+    )
+    firstScroll.dispatchEvent(
+      new MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 300}),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointermove', {bubbles: true, button: 0, clientX: 200}),
+    )
+    window.dispatchEvent(new MouseEvent('pointerup', {bubbles: true, button: 0}))
+    root?.dispatchEvent(
+      new KeyboardEvent('keyup', {bubbles: true, code: 'Space', key: ' '}),
+    )
+    expect(first.viewport.snapshot.visibleStart).toBeGreaterThan(beforePan)
+    expect(reasons).toContain('pan')
+
+    firstScroll.scrollLeft = 0
+    firstScroll.dispatchEvent(new Event('scroll'))
+    expect(first.viewport.snapshot.visibleStart).toBe(0)
+    expect(reasons).toContain('scroll')
+
+    root?.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true, key: 'f'}))
+    expect(first.viewport.snapshot).toMatchObject({
+      visibleRange: [0, 3],
+      zoom: 1,
+      mode: 'fit',
+    })
+    expect(reasons).toContain('fit')
+
+    first.viewport.zoomAt(1.5, 2)
+    document
+      .querySelector<HTMLElement>('#timeline-test .k411-timeline-ruler')
+      ?.dispatchEvent(new MouseEvent('dblclick', {bubbles: true}))
+    expect(first.viewport.snapshot.mode).toBe('fit')
+
+    first.dispose()
+    second.dispose()
+    timeline.dispose()
+  })
+
+  it('edita la duración desde la toolbar con confirmación, cancelación y undo', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+    const duration = document.querySelector<HTMLInputElement>(
+      '.k411-timeline-duration-input',
+    )
+    if (!duration) throw new Error('No se encontró el editor de duración')
+    expect(duration.value).toBe('3.000')
+
+    duration.focus()
+    duration.value = '8.12567'
+    duration.dispatchEvent(new Event('input', {bubbles: true}))
+    duration.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}),
+    )
+    expect(timeline.getDuration('Animated scene')).toBe(8.12567)
+    expect(duration.value).toBe('8.126')
+    expect(view.viewport.snapshot.visibleRange).toEqual([0, 8.12567])
+    expect(timeline.store.history.undoLabel).toBe('Cambiar duración a 8.126s')
+
+    expect(timeline.store.undo()).toBe(true)
+    expect(timeline.getDuration('Animated scene')).toBe(3)
+    expect(duration.value).toBe('3.000')
+    expect(view.viewport.snapshot.visibleRange).toEqual([0, 3])
+
+    duration.focus()
+    duration.value = '6'
+    duration.dispatchEvent(new Event('input', {bubbles: true}))
+    duration.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}),
+    )
+    expect(timeline.getDuration('Animated scene')).toBe(3)
+    expect(duration.value).toBe('3.000')
+
+    duration.focus()
+    duration.value = '4.5'
+    duration.dispatchEvent(new Event('input', {bubbles: true}))
+    duration.blur()
+    expect(timeline.getDuration('Animated scene')).toBe(4.5)
+    expect(duration.value).toBe('4.500')
+
+    duration.focus()
+    duration.value = '0'
+    duration.dispatchEvent(new Event('input', {bubbles: true}))
+    duration.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}),
+    )
+    expect(timeline.getDuration('Animated scene')).toBe(4.5)
+    expect(duration.validationMessage).toMatch(/mayor que cero/)
+    duration.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}),
+    )
+    expect(duration.value).toBe('4.500')
+
+    view.dispose()
+    timeline.dispose()
+  })
 })
 
 function findPropertyRow(label: string): HTMLElement {

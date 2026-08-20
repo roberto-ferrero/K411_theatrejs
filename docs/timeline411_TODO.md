@@ -52,6 +52,34 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 7. Los números se muestran con hasta tres decimales sin redondear el valor
    almacenado, salvo que el usuario confirme explícitamente un valor nuevo.
 
+### Decisiones del viewport temporal
+
+1. La vista comienza en modo `fit` mostrando toda la secuencia.
+2. Después del primer zoom o pan pasa a modo `manual`; un resize conserva su
+   centro y rango temporal.
+3. `Ctrl/Cmd + rueda` aplica zoom focal alrededor del cursor.
+4. Trackpad horizontal y `Shift + rueda` hacen pan horizontal.
+5. `Espacio + drag` y el botón central permiten arrastrar el viewport.
+6. El rango queda limitado a `[0, duración]`, sin overscroll.
+7. El rango mínimo es `max(2 frames, 0.05 segundos)`.
+8. La tecla `F` y el doble clic sobre el ruler restauran el modo `fit`.
+9. HTML utiliza su scrollbar nativa, sincronizada con un estado de viewport
+   independiente del renderer.
+10. El viewport se conserva en memoria por vista hasta implementar el sidecar y
+    nunca se incluye en `animation.json`.
+
+### Decisiones de edición de duración
+
+1. La duración total se edita directamente desde la toolbar.
+2. `Enter` y blur confirman; `Escape` restaura la duración vigente.
+3. Sólo se aceptan números finitos mayores que cero.
+4. El input no muestra controles laterales de incremento y reducción.
+5. La operación utiliza `timeline.editor.transaction()` y participa en undo/redo.
+6. Se muestran tres decimales, pero se almacena la precisión introducida.
+7. En modo `fit`, el viewport se adapta automáticamente a la nueva duración.
+8. Reducir la duración no elimina keyframes: los que queden fuera del rango se
+   conservan en el modelo y vuelven a ser visibles si se amplía de nuevo.
+
 ## Funcionalidades completadas
 
 ### Modelo y compatibilidad
@@ -94,6 +122,13 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Edición inline de static overrides.
 - [x] Seleccionar o arrastrar un keyframe sincroniza el playhead.
 - [x] Confirmación con `Enter`/blur, cancelación con `Escape` y undo/redo.
+- [x] Viewport temporal renderer-neutral con visible range y modo fit/manual.
+- [x] Zoom focal, pan, límites y fit de secuencia.
+- [x] Scrollbar horizontal nativa sincronizada con el viewport.
+- [x] Grid adaptativo calculado únicamente para el rango visible.
+- [x] Viewports independientes para varias vistas del mismo timeline.
+- [x] Evento `viewport:change` con rango, zoom y motivo.
+- [x] Editor de duración en toolbar con validación, cancelación y undo/redo.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -117,7 +152,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
 
-La suite al cerrar este bloque contiene 27 pruebas. `npm test` y
+La suite actual contiene 35 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -132,11 +167,11 @@ La suite al cerrar este bloque contiene 27 pruebas. `npm test` y
 
 ### Dope Sheet y viewport
 
-- [ ] Zoom, pan, visible range y scrollbar horizontal.
+- [x] Zoom, pan, visible range y scrollbar horizontal.
 - [ ] Árbol plegable y estado de filas por vista.
-- [ ] Indicadores editables de duración y posición.
+- [x] Indicadores editables de duración y posición.
 - [ ] Focus Range completo y cortinas exteriores.
-- [ ] Grid totalmente adaptativo.
+- [x] Grid totalmente adaptativo al rango visible.
 
 ### Selección e interacción
 

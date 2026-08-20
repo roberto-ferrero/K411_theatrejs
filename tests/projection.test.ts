@@ -3,12 +3,14 @@ import projectState from '../src/state.json'
 import {evaluateSheet} from '../src/timeline411/evaluator'
 import {
   buildTimelineRows,
+  createViewportGridTicks,
   projectTimelineRowValue,
   snapToFrame,
   timeToX,
   xToTime,
 } from '../src/timeline411/projection'
 import {parseTheatreProjectState} from '../src/timeline411/validation'
+import {TimelineViewport} from '../src/timeline411/viewport'
 
 describe('proyección temporal', () => {
   it('convierte entre tiempo y píxeles sin perder el rango', () => {
@@ -72,5 +74,15 @@ describe('proyección temporal', () => {
       evaluateSheet(document, 'Animated scene', 1.5),
     )
     expect(staticValue).toEqual({mode: 'static', value: true})
+  })
+
+  it('genera únicamente los ticks incluidos en el rango visible', () => {
+    const viewport = new TimelineViewport({duration: 10, fps: 30, width: 600})
+    viewport.setVisibleRange(4, 6)
+    const ticks = createViewportGridTicks(viewport.snapshot)
+
+    expect(ticks.length).toBeGreaterThan(1)
+    expect(ticks.every((tick) => tick.time >= 4 && tick.time <= 6)).toBe(true)
+    expect(ticks.every((tick) => tick.x >= 0 && tick.x <= 600)).toBe(true)
   })
 })

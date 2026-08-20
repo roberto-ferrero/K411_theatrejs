@@ -24,6 +24,17 @@
   box-sizing: border-box;
 }
 
+.k411-timeline-root--pan-ready .k411-timeline-scroll,
+.k411-timeline-root--pan-ready .k411-timeline-ruler {
+  cursor: grab;
+}
+
+.k411-timeline-root--panning,
+.k411-timeline-root--panning * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 .k411-timeline-root button,
 .k411-timeline-root input,
 .k411-timeline-root select {
@@ -61,7 +72,8 @@
 
 .k411-timeline-toolbar__button,
 .k411-timeline-preset,
-.k411-timeline-time {
+.k411-timeline-time,
+.k411-timeline-duration-input {
   height: 28px;
   color: var(--k411-text);
   border: 1px solid var(--k411-border);
@@ -83,7 +95,8 @@
 
 .k411-timeline-toolbar__button:focus-visible,
 .k411-timeline-preset:focus-visible,
-.k411-timeline-time:focus-visible {
+.k411-timeline-time:focus-visible,
+.k411-timeline-duration-input:focus-visible {
   outline: 2px solid rgb(98 184 235 / 55%);
   outline-offset: 1px;
 }
@@ -100,9 +113,29 @@
 }
 
 .k411-timeline-duration {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
   margin-right: 3px;
   color: var(--k411-muted);
   white-space: nowrap;
+}
+
+.k411-timeline-duration-input {
+  width: 66px;
+  padding: 0 7px;
+  text-align: right;
+}
+
+.k411-timeline-duration-input {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.k411-timeline-duration-input::-webkit-inner-spin-button,
+.k411-timeline-duration-input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
 }
 
 .k411-timeline-preset {

@@ -762,6 +762,11 @@ Tiempo actual de la secuencia. Se recomienda almacenarlo en segundos.
 
 Longitud total de la secuencia.
 
+En Timeline 411 se puede modificar desde la toolbar o mediante
+`transaction.setDuration(sheetId, duration)`. Es un cambio del documento
+canónico y participa en undo/redo. Reducirla acorta el rango reproducible pero no
+elimina keyframes situados después del nuevo final.
+
 ### Playback Range
 
 Intervalo que será reproducido. Puede ser menor que la duración completa.
@@ -1064,20 +1069,32 @@ popovers.
 ### Viewport
 
 Descripción del rango temporal visible y de las dimensiones del área de dibujo.
+En Timeline 411 es una unidad lógica independiente del renderer. Mantiene
+`visibleStart`, `visibleEnd`, duración, FPS, anchura, zoom y modo `fit` o
+`manual`.
 
 ### Visible Range
 
 Intervalo temporal mostrado por el viewport, por ejemplo `[2, 8]` segundos.
+Se limita al intervalo `[0, duración]` y nunca modifica los tiempos almacenados.
 
 ### Zoom
 
 Cambio de la cantidad de tiempo visible por píxel. Puede representarse
 indirectamente modificando el visible range.
 
+Timeline 411 utiliza zoom focal: el instante situado bajo el cursor conserva la
+misma coordenada visual antes y después de aplicar el zoom. El rango mínimo es el
+mayor entre dos frames y `0.05 s`.
+
 ### Pan / Horizontal Scroll
 
 Desplazamiento horizontal del visible range. No modifica los tiempos de los
 keyframes.
+
+El pan puede proceder de trackpad horizontal, `Shift + rueda`, `Espacio + drag`,
+botón central, scrollbar o API. Todos esos orígenes producen el mismo cambio en
+el modelo de viewport.
 
 ### Pixels per Second
 
