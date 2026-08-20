@@ -262,6 +262,87 @@ describe('vista Timeline 411 HTML', () => {
     view.dispose()
     timeline.dispose()
   })
+
+  it('edita el tiempo del keyframe seleccionado con snapping y validación', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+    const keyframeTime = document.querySelector<HTMLInputElement>(
+      '.k411-timeline-keyframe-time-input',
+    )
+    if (!keyframeTime) throw new Error('No se encontró el editor de tiempo del keyframe')
+    expect(keyframeTime.disabled).toBe(true)
+
+    const lastXKeyframe = [...document.querySelectorAll<HTMLButtonElement>(
+      '.k411-timeline-keyframe',
+    )].find((button) => button.title === 'x: 3.000s')
+    if (!lastXKeyframe) throw new Error('No se encontró el último keyframe de x')
+    lastXKeyframe.click()
+    expect(keyframeTime.disabled).toBe(false)
+    expect(keyframeTime.value).toBe('3.000')
+
+    timeline.player.seek(1)
+    expect(keyframeTime.disabled).toBe(false)
+    expect(keyframeTime.value).toBe('3.000')
+
+    keyframeTime.focus()
+    keyframeTime.dispatchEvent(new Event('input', {bubbles: true}))
+    keyframeTime.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}),
+    )
+    expect(timeline.player.position).toBe(3)
+
+    keyframeTime.focus()
+    keyframeTime.value = '2.234'
+    keyframeTime.dispatchEvent(new Event('input', {bubbles: true}))
+    keyframeTime.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}),
+    )
+    const lastXPosition = () =>
+      timeline.document.sheetsById['Animated scene'].sequence?.tracksByObject[
+        'Torus Knot'
+      ].trackData.Q9IUK1iBde?.keyframes[1].position
+    expect(lastXPosition()).toBe(2.233333)
+    expect(timeline.player.position).toBe(2.233333)
+    expect(keyframeTime.value).toBe('2.233')
+    expect(timeline.store.history.undoLabel).toBe('Mover keyframe a 2.233s')
+
+    expect(timeline.store.undo()).toBe(true)
+    expect(lastXPosition()).toBe(3)
+    expect(keyframeTime.value).toBe('3.000')
+
+    keyframeTime.focus()
+    keyframeTime.value = '0'
+    keyframeTime.dispatchEvent(new Event('input', {bubbles: true}))
+    keyframeTime.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}),
+    )
+    expect(lastXPosition()).toBe(3)
+    expect(keyframeTime.validationMessage).toMatch(/otro keyframe/)
+    keyframeTime.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}),
+    )
+
+    keyframeTime.focus()
+    keyframeTime.value = '4'
+    keyframeTime.dispatchEvent(new Event('input', {bubbles: true}))
+    keyframeTime.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}),
+    )
+    expect(lastXPosition()).toBe(3)
+    expect(keyframeTime.validationMessage).toMatch(/entre 0 y 3.000/)
+    keyframeTime.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}),
+    )
+
+    document
+      .querySelector<HTMLElement>('[data-timeline411-view]')
+      ?.dispatchEvent(new KeyboardEvent('keydown', {key: 'Delete', bubbles: true}))
+    expect(keyframeTime.disabled).toBe(true)
+
+    view.dispose()
+    timeline.dispose()
+  })
 })
 
 function findPropertyRow(label: string): HTMLElement {

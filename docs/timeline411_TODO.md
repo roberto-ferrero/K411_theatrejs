@@ -80,6 +80,24 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 8. Reducir la duración no elimina keyframes: los que queden fuera del rango se
    conservan en el modelo y vuelven a ser visibles si se amplía de nuevo.
 
+### Decisiones de edición del tiempo del keyframe
+
+1. La toolbar dispone de un campo `KF` separado del campo de posición del
+   playhead.
+2. El campo `KF` representa y modifica el tiempo del keyframe seleccionado; la
+   selección permanece activa aunque se mueva el playhead.
+3. El tiempo introducido se ajusta automáticamente al frame más cercano según
+   el FPS de la secuencia y el campo muestra el resultado ajustado.
+4. Sólo se aceptan tiempos cuyo frame ajustado esté dentro de
+   `[0, duración]`; no se recorta el valor ni se amplía la secuencia.
+5. Si ya existe otro keyframe en el mismo frame y track, la operación se rechaza
+   sin reemplazar ni eliminar datos.
+6. `Enter` y blur confirman; `Escape` restaura el tiempo vigente.
+7. La modificación usa `timeline.editor.transaction()`, participa en undo/redo
+   y mueve el playhead al nuevo tiempo.
+8. El campo queda desactivado cuando no hay selección o el keyframe seleccionado
+   se elimina.
+
 ## Funcionalidades completadas
 
 ### Modelo y compatibilidad
@@ -129,6 +147,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Viewports independientes para varias vistas del mismo timeline.
 - [x] Evento `viewport:change` con rango, zoom y motivo.
 - [x] Editor de duración en toolbar con validación, cancelación y undo/redo.
+- [x] Editor `KF` del tiempo del keyframe seleccionado con snapping, validación
+      de rango y colisiones, sincronización del playhead y undo/redo.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -152,7 +172,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
 
-La suite actual contiene 35 pruebas. `npm test` y
+La suite actual contiene 36 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -184,7 +204,7 @@ La suite actual contiene 35 pruebas. `npm test` y
 ### Edición de valores y curvas
 
 - [x] Editor inline de valor para keyframes y static overrides.
-- [ ] Editor inline de tiempo del keyframe.
+- [x] Editor inline de tiempo del keyframe.
 - [ ] Curve Editor emergente con handles manuales.
 - [ ] Graph Editor redimensionable.
 - [ ] Curvas escalares y representación de valores no escalares.

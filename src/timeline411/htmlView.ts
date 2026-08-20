@@ -65,6 +65,7 @@ export class Timeline411HtmlView {
   private redoButton?: HTMLButtonElement
   private timeInput?: HTMLInputElement
   private durationInput?: HTMLInputElement
+  private keyframeTimeInput?: HTMLInputElement
   private interpolationSelect?: HTMLSelectElement
   private resizeObserver?: ResizeObserver
   private selected?: KeyframeAddress
@@ -75,6 +76,7 @@ export class Timeline411HtmlView {
   private spacePressed = false
   private lastScrollTop = 0
   private durationEditDirty = false
+  private keyframeTimeEditDirty = false
   private currentRows: readonly TimelineRow[] = []
   private readonly treeRowElements = new Map<string, HTMLElement>()
   private readonly unsubscribers: Array<() => void> = []
@@ -265,6 +267,54 @@ export class Timeline411HtmlView {
     this.durationInput = durationInput
     this.updateDurationInput(true)
 
+    const keyframeTime = document.createElement('label')
+    keyframeTime.className = 'k411-timeline-keyframe-time'
+    const keyframeTimeLabel = document.createElement('span')
+    keyframeTimeLabel.textContent = 'KF'
+    const keyframeTimeInput = document.createElement('input')
+    keyframeTimeInput.className = 'k411-timeline-keyframe-time-input'
+    keyframeTimeInput.type = 'number'
+    keyframeTimeInput.min = '0'
+    keyframeTimeInput.step = String(1 / this.timeline.getFps(this.sheetId))
+    keyframeTimeInput.disabled = true
+    keyframeTimeInput.setAttribute(
+      'aria-label',
+      'Tiempo del keyframe seleccionado en segundos',
+    )
+    keyframeTimeInput.title = 'Editar tiempo del keyframe seleccionado'
+    keyframeTimeInput.addEventListener('focus', () => {
+      if (!this.keyframeTimeEditDirty) keyframeTimeInput.setCustomValidity('')
+    })
+    keyframeTimeInput.addEventListener('input', () => {
+      this.keyframeTimeEditDirty = true
+      keyframeTimeInput.setCustomValidity('')
+    })
+    keyframeTimeInput.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        if (this.commitKeyframeTimeInput()) keyframeTimeInput.blur()
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        this.keyframeTimeEditDirty = false
+        keyframeTimeInput.setCustomValidity('')
+        this.updateKeyframeTimeInput(true)
+        keyframeTimeInput.blur()
+      }
+    })
+    keyframeTimeInput.addEventListener('blur', () => {
+      if (this.keyframeTimeEditDirty) this.commitKeyframeTimeInput()
+    })
+    const keyframeTimeSuffix = document.createElement('span')
+    keyframeTimeSuffix.textContent = 's'
+    keyframeTime.append(
+      keyframeTimeLabel,
+      keyframeTimeInput,
+      keyframeTimeSuffix,
+    )
+    this.keyframeTimeInput = keyframeTimeInput
+    this.updateKeyframeTimeInput(true)
+
     const undoButton = createToolbarButton('↶', 'Deshacer')
     undoButton.addEventListener('click', () => this.timeline.store.undo())
     this.undoButton = undoButton
@@ -317,6 +367,7 @@ export class Timeline411HtmlView {
       playButton,
       timeInput,
       duration,
+      keyframeTime,
       undoButton,
       redoButton,
       interpolation,
@@ -328,6 +379,7 @@ export class Timeline411HtmlView {
   private render(): void {
     if (!this.root || !this.treeRows || !this.timelineScroll || !this.surface) return
     this.updateDurationInput()
+    this.updateKeyframeTimeInput()
     const rows = buildTimelineRows(this.timeline.document, this.sheetId)
     this.currentRows = rows
     const viewport = this.viewport.snapshot
@@ -554,6 +606,109 @@ export class Timeline411HtmlView {
       }
     }
     this.updateDurationInput(true)
+    return true
+  }
+
+  private updateKeyframeTimeInput(force = false): void {
+    if (!this.keyframeTimeInput) return
+    const keyframe = this.selected
+      ? findKeyframe(this.timeline.document, this.selected)
+      : undefined
+    if (!this.selected || !keyframe) {
+      const hadSelection = Boolean(this.selected)
+      this.selected = undefined
+      this.keyframeTimeEditDirty = false
+      this.keyframeTimeInput.disabled = true
+      this.keyframeTimeInput.value = ''
+      this.keyframeTimeInput.setCustomValidity('')
+      if (this.interpolationSelect) this.interpolationSelect.disabled = true
+      if (hadSelection) {
+        this.events.emit('selection:change', {selection: undefined})
+      }
+      return
+    }
+    this.keyframeTimeInput.disabled = false
+    this.keyframeTimeInput.step = String(1 / this.timeline.getFps(this.sheetId))
+    if (
+      !force &&
+      this.keyframeTimeEditDirty &&
+      document.activeElement === this.keyframeTimeInput
+    ) {
+      return
+    }
+    this.keyframeTimeInput.value = formatKeyframeTime(keyframe.position)
+  }
+
+  private commitKeyframeTimeInput(): boolean {
+    if (!this.keyframeTimeInput || !this.selected) return false
+    const input = this.keyframeTimeInput
+    const keyframe = findKeyframe(this.timeline.document, this.selected)
+    if (!keyframe) {
+      this.updateKeyframeTimeInput(true)
+      return false
+    }
+
+    const requestedTime = Number(input.value)
+    const duration = this.timeline.getDuration(this.sheetId)
+    if (
+      input.value.trim() === '' ||
+      !Number.isFinite(requestedTime) ||
+      requestedTime < 0 ||
+      requestedTime > duration
+    ) {
+      input.setCustomValidity(
+        `El tiempo debe estar entre 0 y ${formatDuration(duration)} segundos`,
+      )
+      input.reportValidity()
+      return false
+    }
+
+    const snappedTime = snapToFrame(
+      requestedTime,
+      this.timeline.getFps(this.sheetId),
+    )
+    if (snappedTime < 0 || snappedTime > duration) {
+      input.setCustomValidity(
+        `El frame más cercano queda fuera del rango 0–${formatDuration(duration)}s`,
+      )
+      input.reportValidity()
+      return false
+    }
+
+    const track = getTrack(this.timeline.document, this.selected)
+    const collides = track.keyframes.some(
+      (candidate) =>
+        candidate.id !== this.selected?.keyframeId &&
+        Math.abs(candidate.position - snappedTime) < 1e-9,
+    )
+    if (collides) {
+      input.setCustomValidity(
+        'Ya existe otro keyframe en ese frame dentro del mismo track',
+      )
+      input.reportValidity()
+      return false
+    }
+
+    input.setCustomValidity('')
+    this.keyframeTimeEditDirty = false
+    if (Math.abs(keyframe.position - snappedTime) > 1e-9) {
+      try {
+        const selected = this.selected
+        this.timeline.editor.transaction(
+          (transaction) =>
+            transaction.updateKeyframe(selected, {position: snappedTime}),
+          {label: `Mover keyframe a ${formatKeyframeTime(snappedTime)}s`},
+        )
+      } catch (error) {
+        this.keyframeTimeEditDirty = true
+        input.setCustomValidity('No se pudo cambiar el tiempo del keyframe')
+        input.reportValidity()
+        console.warn(error)
+        return false
+      }
+    }
+    this.timeline.getPlayer(this.sheetId).seek(snappedTime)
+    this.updateKeyframeTimeInput(true)
     return true
   }
 
@@ -1178,6 +1333,10 @@ function formatDuration(value: number): string {
   return value.toFixed(3)
 }
 
+function formatKeyframeTime(value: number): string {
+  return value.toFixed(3)
+}
+
 function formatUnknownNumber(value: SerializableValue | undefined): string {
   return typeof value === 'number' ? formatNumber(value) : '0'
 }
@@ -1243,4 +1402,12 @@ function getTrack(
     ]?.trackData[address.trackId]
   if (!track) throw new Error(`Track desconocido: ${address.trackId}`)
   return track
+}
+
+function findKeyframe(document: TimelineDocument, address: KeyframeAddress) {
+  return document.sheetsById[address.sheetId]?.sequence?.tracksByObject[
+    address.objectKey
+  ]?.trackData[address.trackId]?.keyframes.find(
+    (keyframe) => keyframe.id === address.keyframeId,
+  )
 }

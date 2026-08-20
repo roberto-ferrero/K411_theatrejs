@@ -109,6 +109,14 @@ que cero, confirma con `Enter` o blur y cancela con `Escape`. La modificación u
 tres decimales sin reducir la precisión guardada. Los keyframes posteriores a
 una reducción de duración no se eliminan.
 
+La toolbar incluye además un campo `KF` independiente de la posición del
+playhead. Se activa al seleccionar un keyframe y permite cambiar su tiempo con
+`Enter` o blur; `Escape` cancela. El valor se ajusta al frame más cercano, debe
+permanecer dentro de `[0, duración]` y no puede coincidir con otro keyframe del
+mismo track. Una edición válida usa `updateKeyframe()` dentro de una transacción
+reversible y mueve el playhead al nuevo tiempo. La selección y el campo `KF`
+siguen activos si el playhead se desplaza por separado.
+
 Eventos del núcleo implementados:
 
 - `document:change` y `document:preview`.

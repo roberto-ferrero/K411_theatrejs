@@ -413,6 +413,12 @@ perder referencias.
 Posición temporal del keyframe. Se recomienda almacenar segundos como unidad
 canónica y usar frames solamente para formato y snapping.
 
+En Timeline 411 se edita desde el campo `KF` de la toolbar cuando existe un
+keyframe seleccionado. Es distinto de `Position`: mover el playhead no cambia el
+keyframe ni elimina la selección. Al confirmar, el tiempo se ajusta al frame más
+cercano, se valida contra `[0, duración]` y se guarda mediante una transacción
+con undo/redo. El playhead se sincroniza después con el nuevo tiempo.
+
 ### Keyframe Value
 
 Valor que el track alcanza en el tiempo del keyframe. Debe ser compatible con el
@@ -437,6 +443,8 @@ playback para evitar búsquedas repetidas.
 
 Situación en la que dos keyframes del mismo track ocupan el mismo tiempo. La
 implementación debe decidir si reemplazarlos, fusionarlos o rechazar la operación.
+Timeline 411 rechaza la edición si otro keyframe del mismo track ocupa el frame
+de destino; no reemplaza ni elimina el keyframe existente.
 
 ### Aggregate Keyframe
 
