@@ -74,9 +74,10 @@ view.dispose()
 ```
 
 La transacción pública expone `set()`, `unset()`, `sequence()`, `unsequence()`,
-`forgetObject()`, `addKeyframe()`, `updateKeyframe()`, `removeKeyframe()`,
-`setInterpolation()`, `setDuration()` y `setFps()`. Todas las operaciones del
-callback forman un único cambio atómico y un único paso de undo.
+`forgetObject()`, `addKeyframe()`, `addKeyframeAt()`, `updateKeyframe()`,
+`removeKeyframe()`, `removeKeyframeAt()`, `setInterpolation()`, `setDuration()` y
+`setFps()`. Todas las operaciones del callback forman un único cambio atómico y
+un único paso de undo.
 
 `TimelineStore` continúa exportado como API de bajo nivel para la GUI existente.
 Incluye transacciones, gestos `preview/commit/cancel`, undo, redo y reemplazo de
@@ -116,6 +117,13 @@ permanecer dentro de `[0, duración]` y no puede coincidir con otro keyframe del
 mismo track. Una edición válida usa `updateKeyframe()` dentro de una transacción
 reversible y mueve el playhead al nuevo tiempo. La selección y el campo `KF`
 siguen activos si el playhead se desplaza por separado.
+
+Cada fila de propiedad primitiva incluye un rombo `◇/◆` para añadir o quitar un
+keyframe en el playhead. El doble clic sobre la lane aplica la misma operación en
+el tiempo apuntado. La primera alta sobre una propiedad estática crea el track;
+también se puede poblar un track vacío. Al quitar el último keyframe, la vista
+des-secuencia el track y conserva el valor evaluado como static override. Estas
+reglas se implementan en el editor y pueden reutilizarse desde HTML o WebGL.
 
 Eventos del núcleo implementados:
 
@@ -703,8 +711,21 @@ interface TimelineTransaction {
     keyframe: NewKeyframe<T>,
   ): KeyframeHandle<T>
 
+  addKeyframeAt<T>(
+    property: PropertyRef<T> | PropertyAddress,
+    options: {position: number; value?: T},
+  ): KeyframeAddress
+
   updateKeyframe(keyframe: KeyframeHandle | KeyframeAddress, patch: KeyframePatch): void
-  removeKeyframe(keyframe: KeyframeHandle | KeyframeAddress): void
+  removeKeyframe(
+    keyframe: KeyframeHandle | KeyframeAddress,
+    options?: {unsequenceIfEmpty?: boolean},
+  ): void
+  removeKeyframeAt(
+    property: PropertyRef<unknown> | PropertyAddress,
+    position: number,
+    options?: {unsequenceIfEmpty?: boolean},
+  ): KeyframeAddress | undefined
   setInterpolation(
     keyframe: KeyframeHandle | KeyframeAddress,
     preset: 'linear' | 'hold' | 'ease' | 'easeIn' | 'easeOut' | 'easeInOut',
@@ -724,6 +745,19 @@ Para conservar la ergonomía de Theatre.js:
 - Si no está secuenciada, modifica su static override.
 - Las operaciones explícitas `addKeyframe()` y `updateKeyframe()` evitan esta
   decisión automática cuando el editor necesita control preciso.
+
+### Semántica de `addKeyframeAt()` y `removeKeyframeAt()`
+
+- La posición se ajusta al frame más cercano y debe quedar dentro de la
+  duración.
+- `addKeyframeAt()` crea el track si no existe y usa el valor evaluado cuando no
+  recibe `value`.
+- Puede recibir una referencia tipada o una `PropertyAddress`, lo que permite a
+  un controlador renderer-neutral operar sin depender del DOM.
+- `removeKeyframeAt()` no hace nada si no existe una clave en ese frame.
+- Por defecto, quitar el último keyframe elimina el track y conserva el valor
+  evaluado como static override. `{unsequenceIfEmpty: false}` permite conservar
+  deliberadamente un track vacío desde APIs de bajo nivel.
 
 ### TransactionOptions
 

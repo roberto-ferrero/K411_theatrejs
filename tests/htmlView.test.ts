@@ -343,6 +343,75 @@ describe('vista Timeline 411 HTML', () => {
     view.dispose()
     timeline.dispose()
   })
+
+  it('crea y quita keyframes en una propiedad estática mediante rombo y lane', () => {
+    const timeline = createTimeline({id: 'wireframe-view', state: projectState})
+    timeline.composition('Animated scene').object('Torus Knot', {
+      rotation: {x: 0, y: 0, z: 0},
+      wireframe: true,
+    })
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+    timeline.player.seek(1)
+
+    const wireframeRow = findPropertyRow('wireframe')
+    const initialToggle = wireframeRow.querySelector<HTMLButtonElement>(
+      '.k411-timeline-tree-row__keyframe-toggle',
+    )
+    expect(initialToggle?.textContent).toBe('◇')
+    initialToggle?.click()
+
+    const getWireframeTrack = () => {
+      const objectTracks = timeline.document.sheetsById['Animated scene'].sequence
+        ?.tracksByObject['Torus Knot']
+      const trackId = objectTracks?.trackIdByPropPath['["wireframe"]']
+      return trackId ? objectTracks?.trackData[trackId] : undefined
+    }
+    expect(getWireframeTrack()?.keyframes).toEqual([
+      expect.objectContaining({position: 1, value: true}),
+    ])
+    expect(
+      findPropertyRow('wireframe').querySelector<HTMLButtonElement>(
+        '.k411-timeline-tree-row__keyframe-toggle',
+      )?.textContent,
+    ).toBe('◆')
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '.k411-timeline-keyframe-time-input',
+      )?.value,
+    ).toBe('1.000')
+
+    findPropertyRow('wireframe')
+      .querySelector<HTMLButtonElement>('.k411-timeline-tree-row__keyframe-toggle')
+      ?.click()
+    expect(getWireframeTrack()).toBeUndefined()
+    expect(
+      timeline.document.sheetsById['Animated scene'].staticOverrides.byObject[
+        'Torus Knot'
+      ].wireframe,
+    ).toBe(true)
+    expect(timeline.store.history.undoLabel).toBe('Quitar keyframe de wireframe')
+
+    expect(timeline.store.undo()).toBe(true)
+    expect(getWireframeTrack()?.keyframes).toHaveLength(1)
+    expect(timeline.store.redo()).toBe(true)
+    expect(getWireframeTrack()).toBeUndefined()
+
+    view.viewport.setMetrics(3, 30, 300)
+    const wireframeLane = [...document.querySelectorAll<HTMLElement>(
+      '.k411-timeline-lane',
+    )].find((lane) => lane.dataset.rowId?.endsWith('["wireframe"]'))
+    if (!wireframeLane) throw new Error('No se encontró la lane de wireframe')
+    wireframeLane.dispatchEvent(
+      new MouseEvent('dblclick', {bubbles: true, cancelable: true, clientX: 200}),
+    )
+    expect(getWireframeTrack()?.keyframes).toEqual([
+      expect.objectContaining({position: 2, value: true}),
+    ])
+
+    view.dispose()
+    timeline.dispose()
+  })
 })
 
 function findPropertyRow(label: string): HTMLElement {

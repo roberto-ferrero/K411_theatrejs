@@ -98,6 +98,24 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 8. El campo queda desactivado cuando no hay selección o el keyframe seleccionado
    se elimina.
 
+### Decisiones de alta y baja desde una propiedad
+
+1. Toda fila de propiedad primitiva muestra un rombo: `◇` cuando no hay
+   keyframe en el playhead y `◆` cuando sí existe.
+2. Pulsar `◇` crea un keyframe en el playhead; pulsar `◆` lo elimina.
+3. El doble clic sobre la lane ejecuta la misma operación en el tiempo señalado.
+4. Si la propiedad sólo tiene un static override, la primera alta crea el track
+   y su primer keyframe dentro de una única transacción.
+5. Un track existente pero vacío también acepta el alta. Si no se proporciona
+   un valor explícito, se utiliza el valor evaluado de la propiedad en ese tiempo.
+6. Al eliminar el último keyframe, el track se des-secuencia automáticamente y
+   el valor evaluado se conserva como static override; no se persisten tracks
+   vacíos desde este flujo.
+7. Las operaciones aceptan una referencia tipada de propiedad o una
+   `PropertyAddress`, para no acoplar el controlador a la vista HTML.
+8. El tiempo se ajusta a frames, se valida contra la duración y cada acción
+   participa en undo/redo.
+
 ## Funcionalidades completadas
 
 ### Modelo y compatibilidad
@@ -149,6 +167,10 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Editor de duración en toolbar con validación, cancelación y undo/redo.
 - [x] Editor `KF` del tiempo del keyframe seleccionado con snapping, validación
       de rango y colisiones, sincronización del playhead y undo/redo.
+- [x] Rombo `◇/◆` por propiedad para añadir o quitar un keyframe en el playhead.
+- [x] Alta y baja mediante doble clic en lanes estáticas, secuenciadas o vacías.
+- [x] Creación automática del track y des-secuenciación al eliminar su último
+      keyframe, conservando el valor como static override.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -172,7 +194,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
 
-La suite actual contiene 36 pruebas. `npm test` y
+La suite actual contiene 38 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks

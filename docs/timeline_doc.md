@@ -446,6 +446,26 @@ implementación debe decidir si reemplazarlos, fusionarlos o rechazar la operaci
 Timeline 411 rechaza la edición si otro keyframe del mismo track ocupa el frame
 de destino; no reemplaza ni elimina el keyframe existente.
 
+### Keyframe Toggle
+
+Control de rombo asociado a una propiedad primitiva. En Timeline 411, `◇`
+indica que no hay keyframe en el playhead y `◆` que sí existe. Activarlo crea o
+elimina el keyframe mediante el editor, independientemente de que la
+representación sea HTML o WebGL.
+
+La primera activación sobre una propiedad estática crea su track. Al desactivar
+el único keyframe, el track se elimina y el valor evaluado se conserva como
+static override.
+
+### Empty Track
+
+Track que existe en `trackIdByPropPath` y `trackData`, pero cuya lista de
+keyframes está vacía. No produce un valor durante la evaluación. Timeline 411
+permite poblarlo desde el rombo o mediante `addKeyframeAt()`; el valor inicial se
+obtiene del valor evaluado de la propiedad. El flujo normal de borrado evita
+generarlo porque des-secuencia automáticamente el track al quitar su última
+clave.
+
 ### Aggregate Keyframe
 
 Símbolo visual que representa varios keyframes coincidentes en el tiempo. Por

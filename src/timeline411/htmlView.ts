@@ -1,5 +1,4 @@
 import './timeline411.css'
-import {evaluateTrack} from './evaluator'
 import {TypedEventEmitter} from './events'
 import type {
   EasingPreset,
@@ -451,10 +450,14 @@ export class Timeline411HtmlView {
       const y = rulerHeight + index * rowHeight
       const lane = document.createElement('div')
       lane.className = `k411-timeline-lane k411-timeline-lane--${row.kind}`
+      lane.dataset.rowId = row.id
       lane.style.top = `${y}px`
       lane.style.height = `${rowHeight}px`
-      if (row.trackId) {
-        lane.addEventListener('dblclick', (event) => this.addKeyframe(event, row))
+      if (isPrimitivePropertyRow(row)) {
+        lane.addEventListener('dblclick', (event) => {
+          event.preventDefault()
+          this.toggleKeyframe(row, this.timeFromClientX(event.clientX, true))
+        })
       }
       this.surface?.appendChild(lane)
 
@@ -543,6 +546,20 @@ export class Timeline411HtmlView {
     const valueCell = document.createElement('span')
     valueCell.className = 'k411-timeline-tree-row__value'
     element.append(icon, label, valueCell)
+    if (isPrimitivePropertyRow(row)) {
+      const keyframeToggle = document.createElement('button')
+      keyframeToggle.type = 'button'
+      keyframeToggle.className = 'k411-timeline-tree-row__keyframe-toggle'
+      keyframeToggle.addEventListener('click', (event) => {
+        event.stopPropagation()
+        this.toggleKeyframe(
+          row,
+          this.timeline.getPlayer(this.sheetId).position,
+        )
+      })
+      this.updateKeyframeToggle(keyframeToggle, row, value)
+      element.appendChild(keyframeToggle)
+    }
     this.treeRowElements.set(row.id, element)
     this.renderRowValue(valueCell, row, value)
     return element
@@ -717,22 +734,49 @@ export class Timeline411HtmlView {
     const position = this.timeline.getPlayer(this.sheetId).position
     const evaluated = this.timeline.evaluate(this.sheetId, position)
     for (const row of this.currentRows) {
-      const valueCell = this.treeRowElements
-        .get(row.id)
-        ?.querySelector<HTMLElement>('.k411-timeline-tree-row__value')
-      if (!valueCell) continue
-      this.renderRowValue(
-        valueCell,
-        row,
-        projectTimelineRowValue(
-          this.timeline.document,
-          this.sheetId,
-          row,
-          position,
-          evaluated,
-        ),
+      const rowElement = this.treeRowElements.get(row.id)
+      const valueCell = rowElement?.querySelector<HTMLElement>(
+        '.k411-timeline-tree-row__value',
       )
+      if (!valueCell) continue
+      const projection = projectTimelineRowValue(
+        this.timeline.document,
+        this.sheetId,
+        row,
+        position,
+        evaluated,
+      )
+      this.renderRowValue(valueCell, row, projection)
+      const keyframeToggle = rowElement?.querySelector<HTMLButtonElement>(
+        '.k411-timeline-tree-row__keyframe-toggle',
+      )
+      if (keyframeToggle) {
+        this.updateKeyframeToggle(keyframeToggle, row, projection)
+      }
     }
+  }
+
+  private updateKeyframeToggle(
+    button: HTMLButtonElement,
+    row: TimelineRow,
+    projection: TimelineRowValueProjection,
+  ): void {
+    const hasKeyframe = projection.mode === 'keyframe'
+    button.textContent = hasKeyframe ? '◆' : '◇'
+    button.classList.toggle(
+      'k411-timeline-tree-row__keyframe-toggle--active',
+      hasKeyframe,
+    )
+    button.setAttribute('aria-pressed', String(hasKeyframe))
+    button.setAttribute(
+      'aria-label',
+      hasKeyframe
+        ? `Quitar keyframe de ${row.label}`
+        : `Añadir keyframe a ${row.label}`,
+    )
+    button.title = hasKeyframe
+      ? 'Quitar keyframe en el playhead'
+      : 'Añadir keyframe en el playhead'
   }
 
   private renderRowValue(
@@ -899,30 +943,47 @@ export class Timeline411HtmlView {
     this.root?.focus({preventScroll: true})
   }
 
-  private addKeyframe(event: MouseEvent, row: TimelineRow): void {
-    if (!row.trackId || !this.surface) return
-    const track = getTrack(this.timeline.document, {
-      sheetId: this.sheetId,
-      objectKey: row.objectKey,
-      trackId: row.trackId,
-    })
-    const time = this.timeFromClientX(event.clientX, true)
-    const value = evaluateTrack(track, time)
-    if (typeof value === 'undefined') return
-    let keyframeId = ''
-    this.timeline.store.transaction('Añadir keyframe', (transaction) => {
-      keyframeId = transaction.addKeyframe(
-        {sheetId: this.sheetId, objectKey: row.objectKey, trackId: row.trackId as string},
-        {position: time, value},
+  private toggleKeyframe(row: TimelineRow, requestedTime: number): void {
+    if (!isPrimitivePropertyRow(row)) return
+    const time = snapToFrame(requestedTime, this.timeline.getFps(this.sheetId))
+    const target =
+      this.getPropertyRef(row) ??
+      ({
+        sheetId: this.sheetId,
+        objectKey: row.objectKey,
+        path: row.path,
+      } as const)
+    const existing = row.trackId
+      ? getTrack(this.timeline.document, {
+          sheetId: this.sheetId,
+          objectKey: row.objectKey,
+          trackId: row.trackId,
+        }).keyframes.find(
+          (keyframe) => Math.abs(keyframe.position - time) < 1e-6,
+        )
+      : undefined
+    let created: KeyframeAddress | undefined
+    try {
+      this.timeline.editor.transaction(
+        (transaction) => {
+          if (existing) {
+            transaction.removeKeyframeAt(target, time)
+          } else {
+            created = transaction.addKeyframeAt(target, {position: time})
+          }
+        },
+        {
+          label: existing
+            ? `Quitar keyframe de ${row.label}`
+            : `Añadir keyframe a ${row.label}`,
+        },
       )
-    })
+    } catch (error) {
+      console.warn(error)
+      return
+    }
     this.timeline.getPlayer(this.sheetId).seek(time)
-    this.selectKeyframe({
-      sheetId: this.sheetId,
-      objectKey: row.objectKey,
-      trackId: row.trackId,
-      keyframeId,
-    })
+    this.selectKeyframe(created)
   }
 
   private readonly startKeyframeDrag = (
@@ -1168,9 +1229,9 @@ export class Timeline411HtmlView {
     if ((event.key === 'Delete' || event.key === 'Backspace') && this.selected) {
       event.preventDefault()
       const selected = this.selected
-      this.timeline.store.transaction('Eliminar keyframe', (transaction) => {
+      this.timeline.editor.transaction((transaction) => {
         transaction.removeKeyframe(selected)
-      })
+      }, {label: 'Eliminar keyframe'})
       this.selectKeyframe(undefined)
       return
     }
@@ -1389,6 +1450,13 @@ function sameKeyframeAddress(
     left.objectKey === right.objectKey &&
     left.trackId === right.trackId &&
     left.keyframeId === right.keyframeId
+  )
+}
+
+function isPrimitivePropertyRow(row: TimelineRow): boolean {
+  return (
+    row.path.length > 0 &&
+    (row.kind === 'track' || row.kind === 'static')
   )
 }
 

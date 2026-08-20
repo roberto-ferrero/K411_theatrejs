@@ -128,6 +128,49 @@ describe('API pública de objetos y tracks', () => {
     timeline.dispose()
   })
 
+  it('añade keyframes por propiedad y elimina el track al quitar el último', () => {
+    const timeline = createTimeline({
+      id: 'property-keyframes',
+      idFactory: deterministicIds(),
+    })
+    const composition = timeline.composition('Scene')
+    const object = composition.object('Material', {wireframe: true})
+
+    timeline.store.transaction('Crear track vacío', (transaction) => {
+      transaction.sequenceProperty(object.props.wireframe.address)
+    })
+    expect(composition.getTrackFor(object.props.wireframe)?.getKeyframes()).toHaveLength(0)
+
+    const created = timeline.editor.transaction((transaction) =>
+      transaction.addKeyframeAt(object.props.wireframe, {position: 1.014}),
+    )
+    const track = composition.getTrackFor(object.props.wireframe)
+    expect(created).toMatchObject({
+      sheetId: 'Scene',
+      objectKey: 'Material',
+      keyframeId: expect.any(String),
+    })
+    expect(track?.snapshot.keyframes).toEqual([
+      expect.objectContaining({position: 1, value: true}),
+    ])
+
+    const removed = timeline.editor.transaction((transaction) =>
+      transaction.removeKeyframeAt(object.props.wireframe, 1),
+    )
+    expect(removed).toEqual(created)
+    expect(composition.getTrackFor(object.props.wireframe)).toBeUndefined()
+    expect(
+      timeline.document.sheetsById.Scene.staticOverrides.byObject.Material
+        .wireframe,
+    ).toBe(true)
+
+    expect(timeline.editor.history.undo()).toBe(true)
+    expect(composition.getTrackFor(object.props.wireframe)?.getKeyframes()).toHaveLength(1)
+    expect(timeline.editor.history.redo()).toBe(true)
+    expect(composition.getTrackFor(object.props.wireframe)).toBeUndefined()
+    timeline.dispose()
+  })
+
   it('usa interpoladores personalizados durante la evaluación', () => {
     const timeline = createTimeline({id: 'interpolators', idFactory: deterministicIds()})
     const composition = timeline.composition('Scene')

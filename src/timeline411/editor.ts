@@ -2,10 +2,11 @@ import type {
   EasingPreset,
   KeyframeAddress,
   ObjectAddress,
+  PropertyAddress,
   SerializableMap,
   SerializableValue,
 } from './model'
-import {getValueAtPath} from './paths'
+import {decodePropertyPath, encodePropertyPath, getValueAtPath} from './paths'
 import {snapToFrame} from './projection'
 import type {TimelineTransaction as StoreTransaction} from './store'
 import type {KeyframePatch, NewKeyframe} from './store'
@@ -21,6 +22,19 @@ import {
 export interface EditorTransactionOptions {
   readonly label?: string
 }
+
+export interface AddKeyframeAtOptions<Value = unknown> {
+  readonly position: number
+  readonly value?: Value
+}
+
+export interface RemoveKeyframeOptions {
+  readonly unsequenceIfEmpty?: boolean
+}
+
+export type TimelinePropertyTarget<Value = unknown> =
+  | TimelinePropertyRef<Value>
+  | PropertyAddress
 
 export class TimelineHistory {
   constructor(private readonly timeline: Timeline411) {}
@@ -221,6 +235,47 @@ export class TimelineEditorTransaction {
     return track.getOrCreateKeyframeHandle(id)
   }
 
+  addKeyframeAt<Value>(
+    property: TimelinePropertyTarget<Value>,
+    options: AddKeyframeAtOptions<Value>,
+  ): KeyframeAddress {
+    const propertyRef = isTimelinePropertyRef(property) ? property : undefined
+    if (propertyRef) {
+      assertPrimitiveProperty(propertyRef)
+      assertPropertyBelongsToTimeline(this.timeline, propertyRef)
+    }
+    const address: PropertyAddress = propertyRef
+      ? propertyRef.address
+      : (property as PropertyAddress)
+    assertPropertyAddressBelongsToTimeline(this.timeline, address)
+    const position = snapAndValidatePosition(
+      this.timeline,
+      address.sheetId,
+      options.position,
+    )
+    const value = resolveKeyframeValue(
+      this.timeline,
+      propertyRef,
+      address,
+      position,
+      options.value,
+    )
+    const key = propertyAddressKey(address)
+    let trackId = this.getTrackIdForAddress(address)
+    if (!trackId) {
+      trackId = this.transaction.sequenceProperty(address)
+      this.stagedTrackIds.set(key, trackId)
+      this.stagedUnsequenced.delete(key)
+    }
+    const keyframeId = this.transaction.addKeyframe(
+      {sheetId: address.sheetId, objectKey: address.objectKey, trackId},
+      {position, value},
+    )
+    this.stagedValues.set(key, value)
+    this.stagedKeyframeIds.set(keyframeKey(key, position), keyframeId)
+    return {...address, trackId, keyframeId}
+  }
+
   updateKeyframe(
     keyframe: TimelineKeyframe | KeyframeAddress,
     patch: KeyframePatch,
@@ -233,13 +288,47 @@ export class TimelineEditorTransaction {
     this.transaction.updateKeyframe(address, patch)
   }
 
-  removeKeyframe(keyframe: TimelineKeyframe | KeyframeAddress): void {
+  removeKeyframe(
+    keyframe: TimelineKeyframe | KeyframeAddress,
+    options: RemoveKeyframeOptions = {},
+  ): void {
     if (keyframe instanceof TimelineKeyframe) {
       assertTrackBelongsToTimeline(this.timeline, keyframe.track)
     }
     const address =
       keyframe instanceof TimelineKeyframe ? keyframe.address : keyframe
-    this.transaction.removeKeyframe(address)
+    this.removeKeyframeByAddress(address, options)
+  }
+
+  removeKeyframeAt(
+    property: TimelinePropertyTarget,
+    position: number,
+    options: RemoveKeyframeOptions = {},
+  ): KeyframeAddress | undefined {
+    const propertyRef = isTimelinePropertyRef(property) ? property : undefined
+    if (propertyRef) {
+      assertPrimitiveProperty(propertyRef)
+      assertPropertyBelongsToTimeline(this.timeline, propertyRef)
+    }
+    const address: PropertyAddress = propertyRef
+      ? propertyRef.address
+      : (property as PropertyAddress)
+    assertPropertyAddressBelongsToTimeline(this.timeline, address)
+    const snapped = snapAndValidatePosition(
+      this.timeline,
+      address.sheetId,
+      position,
+    )
+    const trackId = this.getTrackIdForAddress(address)
+    if (!trackId) return undefined
+    const track = getTrackData(this.timeline, {...address, trackId})
+    const keyframe = track?.keyframes.find(
+      (candidate) => Math.abs(candidate.position - snapped) < 1e-6,
+    )
+    if (!keyframe) return undefined
+    const keyframeAddress = {...address, trackId, keyframeId: keyframe.id}
+    this.removeKeyframeByAddress(keyframeAddress, options)
+    return keyframeAddress
   }
 
   setInterpolation(
@@ -304,6 +393,57 @@ export class TimelineEditorTransaction {
     }
     return property.object.composition.getTrackFor(property)
   }
+
+  private getTrackIdForAddress(address: PropertyAddress): string | undefined {
+    const key = propertyAddressKey(address)
+    if (this.stagedUnsequenced.has(key)) return undefined
+    return (
+      this.stagedTrackIds.get(key) ??
+      this.timeline.document.sheetsById[address.sheetId]?.sequence
+        ?.tracksByObject[address.objectKey]?.trackIdByPropPath[
+          encodePropertyPath(address.path)
+        ]
+    )
+  }
+
+  private removeKeyframeByAddress(
+    address: KeyframeAddress,
+    options: RemoveKeyframeOptions,
+  ): void {
+    const track = getTrackData(this.timeline, address)
+    const keyframe = track?.keyframes.find(
+      (candidate) => candidate.id === address.keyframeId,
+    )
+    if (!track || !keyframe) {
+      throw new Error(`Keyframe desconocido: ${address.keyframeId}`)
+    }
+    if (track.keyframes.length > 1 || options.unsequenceIfEmpty === false) {
+      this.transaction.removeKeyframe(address)
+      return
+    }
+
+    const propertyAddress = findPropertyAddressForTrack(this.timeline, address)
+    if (!propertyAddress) {
+      this.transaction.removeKeyframe(address)
+      return
+    }
+    const evaluated = getValueAtPath(
+      this.timeline.evaluate(
+        propertyAddress.sheetId,
+        this.timeline.getPlayer(propertyAddress.sheetId).position,
+      ).objects[propertyAddress.objectKey] ?? {},
+      propertyAddress.path,
+    )
+    const staticValue =
+      typeof evaluated === 'undefined' ? keyframe.value : evaluated
+    this.transaction.unsequenceProperty(propertyAddress)
+    this.transaction.setStaticValue(propertyAddress, staticValue)
+    const key = propertyAddressKey(propertyAddress)
+    this.stagedTrackIds.delete(key)
+    this.stagedUnsequenced.add(key)
+    this.stagedValues.set(key, staticValue)
+    this.stagedKeyframeIds.delete(keyframeKey(key, keyframe.position))
+  }
 }
 
 function sanitizePropertyValue(
@@ -340,6 +480,19 @@ function assertPropertyBelongsToTimeline(
   }
 }
 
+function assertPropertyAddressBelongsToTimeline(
+  timeline: Timeline411,
+  address: PropertyAddress,
+): void {
+  if (
+    !timeline.document.sheetsById[address.sheetId] ||
+    address.objectKey.length === 0 ||
+    address.path.length === 0
+  ) {
+    throw new Error('La dirección de propiedad no pertenece al timeline')
+  }
+}
+
 function assertTrackBelongsToTimeline(
   timeline: Timeline411,
   track: TimelineTrack<unknown>,
@@ -350,13 +503,87 @@ function assertTrackBelongsToTimeline(
 }
 
 function propertyKey(property: TimelinePropertyRef): string {
-  return JSON.stringify([
-    property.object.composition.id,
-    property.object.id,
-    property.path,
-  ])
+  return propertyAddressKey(property.address)
+}
+
+function propertyAddressKey(address: PropertyAddress): string {
+  return JSON.stringify([address.sheetId, address.objectKey, address.path])
 }
 
 function keyframeKey(property: string, position: number): string {
   return `${property}@${position}`
+}
+
+function snapAndValidatePosition(
+  timeline: Timeline411,
+  sheetId: string,
+  requestedPosition: number,
+): number {
+  const duration = timeline.getDuration(sheetId)
+  if (
+    !Number.isFinite(requestedPosition) ||
+    requestedPosition < 0 ||
+    requestedPosition > duration
+  ) {
+    throw new Error(`El tiempo debe estar entre 0 y ${duration} segundos`)
+  }
+  const position = snapToFrame(requestedPosition, timeline.getFps(sheetId))
+  if (position < 0 || position > duration) {
+    throw new Error('El frame más cercano queda fuera de la duración')
+  }
+  return position
+}
+
+function resolveKeyframeValue<Value>(
+  timeline: Timeline411,
+  property: TimelinePropertyRef<Value> | undefined,
+  address: PropertyAddress,
+  position: number,
+  requestedValue: Value | undefined,
+): SerializableValue {
+  const raw =
+    typeof requestedValue === 'undefined'
+      ? getValueAtPath(
+          timeline.evaluate(address.sheetId, position).objects[
+            address.objectKey
+          ] ?? {},
+          address.path,
+        )
+      : requestedValue
+  if (typeof raw === 'undefined') {
+    throw new Error(`No hay un valor disponible para ${address.path.join('.')}`)
+  }
+  return property
+    ? sanitizePropertyValue(property, raw)
+    : (raw as SerializableValue)
+}
+
+function getTrackData(
+  timeline: Timeline411,
+  address: {sheetId: string; objectKey: string; trackId: string},
+) {
+  return timeline.document.sheetsById[address.sheetId]?.sequence?.tracksByObject[
+    address.objectKey
+  ]?.trackData[address.trackId]
+}
+
+function findPropertyAddressForTrack(
+  timeline: Timeline411,
+  address: {sheetId: string; objectKey: string; trackId: string},
+): PropertyAddress | undefined {
+  const mappings =
+    timeline.document.sheetsById[address.sheetId]?.sequence?.tracksByObject[
+      address.objectKey
+    ]?.trackIdByPropPath
+  if (!mappings) return undefined
+  for (const [encodedPath, trackId] of Object.entries(mappings)) {
+    if (trackId === address.trackId) {
+      return {
+        sheetId: address.sheetId,
+        objectKey: address.objectKey,
+        path: decodePropertyPath(encodedPath),
+      }
+    }
+  }
+  return undefined
 }

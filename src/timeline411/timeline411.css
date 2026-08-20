@@ -275,6 +275,34 @@
   color: var(--k411-text);
 }
 
+.k411-timeline-tree-row__keyframe-toggle {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  color: #747e8e;
+  border: 0;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.k411-timeline-tree-row__keyframe-toggle:hover,
+.k411-timeline-tree-row__keyframe-toggle:focus-visible {
+  color: var(--k411-blue);
+}
+
+.k411-timeline-tree-row__keyframe-toggle:focus-visible {
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgb(98 184 235 / 55%);
+}
+
+.k411-timeline-tree-row__keyframe-toggle--active {
+  color: var(--k411-accent);
+}
+
 .k411-timeline-value-output {
   display: block;
   overflow: hidden;
