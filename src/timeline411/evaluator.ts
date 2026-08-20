@@ -10,9 +10,16 @@ import type {
 import {cloneValue} from './model'
 import {decodePropertyPath, isSerializableMap, setValueAtPath} from './paths'
 
+export type ValueInterpolator = (
+  left: SerializableValue,
+  right: SerializableValue,
+  progression: number,
+) => SerializableValue
+
 export function evaluateTrack(
   track: TheatreBasicKeyframedTrack,
   time: number,
+  interpolator: ValueInterpolator = interpolateValue,
 ): SerializableValue | undefined {
   const keyframes = track.keyframes
   if (keyframes.length === 0) return undefined
@@ -38,7 +45,7 @@ export function evaluateTrack(
     right.handles[0],
     right.handles[1],
   )
-  return interpolateValue(left.value, right.value, valueProgress)
+  return interpolator(left.value, right.value, valueProgress)
 }
 
 export function evaluateSheet(
@@ -46,6 +53,9 @@ export function evaluateSheet(
   sheetId: string,
   requestedTime: number,
   defaults: Readonly<Record<string, SerializableMap>> = {},
+  interpolators: Readonly<
+    Record<string, Readonly<Record<string, ValueInterpolator>>>
+  > = {},
 ): EvaluatedSheet {
   const sheet = document.sheetsById[sheetId]
   if (!sheet) throw new Error(`Sheet desconocida: ${sheetId}`)
@@ -73,7 +83,11 @@ export function evaluateSheet(
     )) {
       const track = objectTracks.trackData[trackId]
       if (!track) continue
-      const value = evaluateTrack(track, time)
+      const value = evaluateTrack(
+        track,
+        time,
+        interpolators[objectKey]?.[encodedPath],
+      )
       if (typeof value !== 'undefined') {
         setValueAtPath(objectValue, decodePropertyPath(encodedPath), value)
       }

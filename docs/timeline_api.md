@@ -5,16 +5,55 @@ reproducir Timeline 411. La API toma como referencia la ergonomía de Theatre.js
 0.7.2, utiliza su mismo modelo JSON de animación y mantiene desacopladas la lógica,
 la interacción y la representación.
 
-> Estado: propuesta de diseño. Los nombres y contratos definidos aquí sirven
-> como objetivo para la implementación; no implican que toda la API exista aún.
+> Estado: contrato parcialmente implementado. Las secciones marcadas como
+> objetivo describen la evolución prevista; el bloque siguiente enumera la API
+> que existe y está probada a fecha de 2026-08-20.
 
 ### Estado de implementación del MVP HTML (2026-08-20)
 
-La propuesta de este documento ya tiene un primer subconjunto funcional. La API
-disponible actualmente es:
+La API de objetos y tracks ya está disponible. La entrada canónica es
+`createTimeline()`; el constructor se conserva por compatibilidad:
 
 ```ts
-const timeline = new Timeline411(theatreProjectState)
+const timeline = createTimeline({
+  id: 'three-scene',
+  state: theatreProjectState,
+})
+
+const composition = timeline.composition('Animated scene')
+const sameComposition = timeline.sheet('Animated scene')
+
+const torus = composition.object('Torus Knot', {
+  rotation: {
+    x: types.number(0, {range: [-2, 2]}),
+    y: 0,
+    z: 0,
+  },
+  wireframe: false,
+})
+
+torus.value
+torus.props.rotation.x.get()
+torus.onValuesChange(listener)
+torus.bind(adapter)
+
+const track = timeline.editor.getTrackFor(torus.props.rotation.x)
+track?.snapshot
+track?.getKeyframes()
+track?.evaluate(1.5)
+
+timeline.editor.transaction((transaction) => {
+  transaction.set(torus.props.wireframe, true)
+  transaction.sequence(torus.props.rotation.x)
+  transaction.set(torus.props.rotation.x, 1)
+}, {label: 'Animate torus'})
+
+timeline.editor.history.undo()
+timeline.editor.history.redo()
+
+composition.sequence.play({loop: true})
+composition.sequence.pause()
+composition.sequence.seek(1.5)
 
 timeline.document
 timeline.firstSheetId
@@ -27,17 +66,6 @@ timeline.stringify(2)
 timeline.on(eventName, listener)
 timeline.dispose()
 
-timeline.player.play({loop: true})
-timeline.player.pause()
-timeline.player.seek(time)
-timeline.player.subscribe(listener)
-
-timeline.store.transaction(label, callback)
-timeline.store.beginGesture(label)
-timeline.store.undo()
-timeline.store.redo()
-timeline.store.replace(document)
-
 const view = new Timeline411HtmlView(timeline, sheetId)
 view.mount('#timeline-411-html')
 view.unmount()
@@ -45,9 +73,18 @@ view.on(eventName, listener)
 view.dispose()
 ```
 
-La transacción expone en esta versión `addKeyframe()`, `updateKeyframe()`,
-`removeKeyframe()`, `setInterpolation()` y `setLength()`. El gesto expone
-`update()`, `commit()` y `cancel()`.
+La transacción pública expone `set()`, `unset()`, `sequence()`, `unsequence()`,
+`forgetObject()`, `addKeyframe()`, `updateKeyframe()`, `removeKeyframe()`,
+`setInterpolation()`, `setDuration()` y `setFps()`. Todas las operaciones del
+callback forman un único cambio atómico y un único paso de undo.
+
+`TimelineStore` continúa exportado como API de bajo nivel para la GUI existente.
+Incluye transacciones, gestos `preview/commit/cancel`, undo, redo y reemplazo de
+documento, pero el código consumidor debe preferir `timeline.editor`.
+
+Los tipos de props implementados son shorthand, `number`, `boolean`, `string`,
+`stringLiteral`, `compound`, `rgba`, `image` y `file`. Los tipos simples admiten
+interpoladores personalizados cuando corresponde.
 
 Eventos del núcleo implementados:
 
@@ -62,9 +99,10 @@ Eventos propios de cada vista implementados:
 - `viewport:change`.
 - `panel:resize`.
 
-La API de `Composition`, los handles estables de objetos y tracks, el playback
-avanzado y los sobres de eventos enriquecidos permanecen como evolución
-posterior. El renderer WebGL tampoco forma parte de este MVP.
+Permanecen como evolución posterior el playback avanzado, sheet instances con
+playheads independientes, los sobres de eventos enriquecidos y el renderer
+WebGL. El detalle actualizado se mantiene en
+[`timeline411_TODO.md`](./timeline411_TODO.md).
 
 El vocabulario empleado se define en el
 [glosario del timeline](./timeline_doc.md).
@@ -207,13 +245,13 @@ Crea el contenedor principal.
 ```ts
 interface CreateTimelineConfig {
   id: string
-  document?: TimelineDocument
+  document?: unknown
+  state?: unknown
   clock?: AnimationClock
-  idFactory?: () => string
-  logger?: TimelineLogger
+  idFactory?: (prefix: string) => string
 }
 
-function createTimeline(config: CreateTimelineConfig): Timeline
+function createTimeline(config: CreateTimelineConfig): Timeline411
 ```
 
 Ejemplo:
@@ -231,15 +269,18 @@ await timeline.ready
 Reglas:
 
 - `id` identifica la instancia lógica del timeline.
-- `document` es opcional; si se omite se crea un documento vacío válido.
+- `document` y `state` son alias mutuamente excluyentes. Si se omiten se crea
+  un documento vacío válido.
 - `clock` puede ser RAF, audio o un reloj determinista.
 - `idFactory` permite generar IDs reproducibles durante tests.
 - La creación no debe montar ninguna GUI.
+- `new Timeline411(theatreProjectState)` sigue disponible como wrapper de
+  compatibilidad.
 
 ## 5. Timeline
 
 ```ts
-interface Timeline {
+interface Timeline411 {
   readonly id: string
   readonly ready: Promise<void>
   readonly editor: TimelineEditor
@@ -248,10 +289,14 @@ interface Timeline {
   get revision(): number
 
   composition(id: string): Composition
+  sheet(id: string): Composition
   getComposition(id: string): Composition | undefined
   getCompositions(): readonly Composition[]
 
-  evaluate(time: number): TimelineSnapshot
+  getDuration(sheetId: string): number
+  getFps(sheetId: string): number
+  getPlayer(sheetId: string): TimelinePlayer
+  evaluate(sheetId: string, time: number): EvaluatedSheet
   serialize(): TheatreProjectState
   replaceDocument(document: TimelineDocument): void
 
@@ -259,11 +304,6 @@ interface Timeline {
     type: K,
     listener: (event: TimelineEventMap[K]) => void,
     options?: TimelineEventListenerOptions,
-  ): Unsubscribe
-
-  once<K extends keyof TimelineEventMap>(
-    type: K,
-    listener: (event: TimelineEventMap[K]) => void,
   ): Unsubscribe
 
   dispose(): void
@@ -280,13 +320,13 @@ directamente.
 Número entero que aumenta una vez por cada cambio confirmado del documento. Una
 previsualización de gesto no incrementa la revisión pública.
 
-### `evaluate(time)`
+### `evaluate(sheetId, time)`
 
 Evalúa el documento sin cambiar el playhead:
 
 ```ts
-const snapshot = timeline.evaluate(1.5)
-const rotationX = snapshot.values.get('torus.rotation.x')
+const snapshot = timeline.evaluate('Animated scene', 1.5)
+const rotationX = snapshot.objects['Torus Knot'].rotation.x
 ```
 
 Esto permite generar thumbnails, exportar frames o inspeccionar valores sin
@@ -294,8 +334,10 @@ interrumpir el playback.
 
 ### `replaceDocument(document)`
 
-Reemplaza el documento completo después de validarlo. Debe pausar la reproducción,
-invalidar handles antiguos y emitir `document:replace`.
+Reemplaza el documento completo después de validarlo, pausa los players activos,
+vacía el historial y emite un cambio de tipo `replace`. Los handles consultan el
+documento actual por dirección; si su entidad desapareció, su snapshot falla de
+forma explícita.
 
 ### `dispose()`
 
@@ -353,11 +395,17 @@ interface TimelineObject<Props extends PropSchema = PropSchema> {
   set initialValue(value: Partial<ValuesOf<Props>>)
 
   onValuesChange(
-    listener: (values: ValuesOf<Props>, context: ValueChangeContext) => void,
+    listener: (values: ValuesOf<Props>) => void,
     options?: ValueSubscriptionOptions,
   ): Unsubscribe
 
-  bind(adapter: ObjectBindingAdapter<ValuesOf<Props>>): Unsubscribe
+  bind(
+    adapter:
+      | ObjectBindingAdapter<ValuesOf<Props>>
+      | ((values: ValuesOf<Props>) => void),
+  ): Unsubscribe
+
+  detach(): void
 }
 ```
 
@@ -368,12 +416,14 @@ valor mutable directamente.
 
 ```ts
 interface PropertyRef<T> {
-  readonly objectId: string
+  readonly object: TimelineObject
   readonly path: readonly string[]
-  readonly type: PropType<T>
+  readonly config: PropType<T>
+  readonly address: PropertyAddress
 
   get(): T
   onChange(listener: (value: T) => void): Unsubscribe
+  getLeafRefs(): readonly PropertyRef[]
 }
 ```
 
@@ -400,26 +450,18 @@ tracks secuenciados.
 
 Equivalente conceptual a `object.onValuesChange()` de Theatre.js.
 
-Reglas propuestas:
+Reglas implementadas:
 
 - Invoca una vez al suscribirse, salvo `emitCurrent: false`.
 - Sólo vuelve a invocar si al menos una prop cambia semánticamente.
 - Durante playback puede ejecutarse una vez por tick del reloj.
 - Devuelve una función de desuscripción idempotente.
-- Un error del listener no debe detener el player.
+- El listener se ejecuta síncronamente; el consumidor debe capturar sus propios
+  errores en esta versión.
 
 ```ts
 interface ValueSubscriptionOptions {
   emitCurrent?: boolean
-  signal?: AbortSignal
-  scheduler?: 'sync' | 'animationFrame' | 'microtask'
-}
-
-interface ValueChangeContext {
-  time: number
-  revision: number
-  source: EventSource
-  changedPaths: readonly PropertyPath[]
 }
 ```
 
@@ -444,44 +486,25 @@ El binding no forma parte del documento serializable.
 
 ## 8. Sequence y playback
 
+Contrato implementado:
+
 ```ts
-type PlaybackDirection =
-  | 'normal'
-  | 'reverse'
-  | 'alternate'
-  | 'alternateReverse'
-
-interface PlayOptions {
-  range?: readonly [start: number, end: number]
-  rate?: number
-  direction?: PlaybackDirection
-  iterationCount?: number
-  clock?: AnimationClock
-}
-
-interface PlaybackResult {
-  completed: boolean
-  reason: 'ended' | 'paused' | 'stopped' | 'replaced' | 'disposed'
-}
-
-interface Sequence {
+interface TimelineSequence {
   readonly composition: Composition
-  readonly duration: number
+  readonly length: number
   readonly fps: number
   readonly playing: boolean
-  readonly playbackState: PlaybackState
 
   get position(): number
   set position(value: number)
 
-  play(options?: PlayOptions): Promise<PlaybackResult>
+  play(options?: {loop?: boolean}): void
   pause(): void
-  stop(options?: {resetTo?: 'start' | 'end' | number}): void
-  seek(position: number, options?: SeekOptions): void
+  seek(position: number): void
 
   subscribe(
     listener: (state: PlaybackState) => void,
-    options?: ValueSubscriptionOptions,
+    emitCurrent?: boolean,
   ): Unsubscribe
 }
 ```
@@ -493,17 +516,14 @@ La posición se restringe al rango `[0, duration]`.
 
 ### `play(options)`
 
-Inicia o reinicia playback y devuelve una promesa que siempre resuelve con el
-motivo de finalización. Pausar no debe dejar una promesa pendiente.
+Inicia o reinicia playback. `loop` vale `true` por defecto.
 
 ```ts
-const result = await scene.sequence.play({
-  range: [0, 3],
-  rate: 1,
-  direction: 'alternate',
-  iterationCount: Infinity,
-})
+scene.sequence.play({loop: true})
 ```
+
+Los rangos, rate, reverse/alternate, iteration count, `PlaybackResult` asíncrono
+y `stop()` pertenecen al TODO de playback completo.
 
 ### `pause()`
 
@@ -511,8 +531,8 @@ Detiene el avance sin cambiar la posición.
 
 ### `stop()`
 
-Detiene el avance y permite elegir dónde queda el playhead. El valor por defecto
-propuesto es el inicio del rango activo.
+Objetivo todavía no implementado: detener el avance y elegir dónde queda el
+playhead.
 
 ### `seek(position)`
 
@@ -549,30 +569,29 @@ Las mutaciones sólo se realizan a través de una transacción o gesto.
 ```ts
 interface TrackSnapshot<T extends TimelineValue = TimelineValue> {
   readonly id: string
-  readonly objectId: string
+  readonly objectKey: string
   readonly propertyPath: PropertyPath
-  readonly target: string
-  readonly valueType: string
   readonly keyframes: readonly KeyframeSnapshot<T>[]
-  readonly muted: boolean
 }
 
 interface KeyframeSnapshot<T extends TimelineValue = TimelineValue> {
   readonly id: string
-  readonly time: number
+  readonly position: number
   readonly value: T
-  readonly interpolation: SegmentInterpolation
+  readonly handles: readonly [number, number, number, number]
+  readonly connectedRight: boolean
+  readonly type?: 'bezier' | 'hold'
 }
 
 interface TrackHandle<T extends TimelineValue = TimelineValue> {
   readonly id: string
   readonly composition: Composition
-  readonly property: PropertyRef<T>
+  readonly property: PropertyRef<T> | undefined
   readonly snapshot: TrackSnapshot<T>
 
   getKeyframe(id: string): KeyframeHandle<T> | undefined
   getKeyframes(): readonly KeyframeHandle<T>[]
-  evaluate(time: number): T
+  evaluate(time: number): T | undefined
 }
 
 interface KeyframeHandle<T extends TimelineValue = TimelineValue> {
@@ -586,11 +605,11 @@ Los handles nunca permiten modificar directamente el snapshot:
 
 ```ts
 // Incorrecto: snapshot inmutable
-track.snapshot.keyframes[0].time = 2
+track.snapshot.keyframes[0].position = 2
 
 // Correcto
 timeline.editor.transaction((tx) => {
-  tx.updateKeyframe(track.id, keyframe.id, {time: 2})
+  tx.updateKeyframe(keyframe, {position: 2})
 })
 ```
 
@@ -613,18 +632,13 @@ interface TimelineEditor {
   transaction<Result = void>(
     callback: (tx: TimelineTransaction) => Result,
     options?: TransactionOptions,
-  ): TransactionResult<Result>
-
-  beginGesture(options?: GestureOptions): EditingGesture
+  ): Result
 
   getTrackFor<T>(property: PropertyRef<T>): TrackHandle<T> | undefined
-}
-```
-
-```ts
-interface TransactionResult<Result> {
-  readonly result: Result
-  readonly changeSet: ChangeSet
+  forgetObject(
+    object: TimelineObject | ObjectAddress,
+    options?: TransactionOptions,
+  ): void
 }
 ```
 
@@ -639,8 +653,9 @@ timeline.editor.transaction((tx) => {
 }, {label: 'Rotate torus'})
 ```
 
-Si el callback lanza una excepción, la transacción se revierte y emite
-`transaction:rollback`.
+Si el callback lanza una excepción, el draft se descarta y no se añade una
+entrada al historial. Los change sets y el evento `transaction:rollback`
+permanecen pendientes.
 
 ### TimelineTransaction
 
@@ -653,25 +668,20 @@ interface TimelineTransaction {
   unsequence(property: PropertyRef<unknown>): void
 
   addKeyframe<T>(
-    trackId: string,
+    track: TrackHandle<T>,
     keyframe: NewKeyframe<T>,
   ): KeyframeHandle<T>
 
-  updateKeyframe<T>(
-    trackId: string,
-    keyframeId: string,
-    patch: Partial<KeyframeData<T>>,
-  ): void
-
-  removeKeyframes(trackId: string, keyframeIds: readonly string[]): void
-  moveKeyframes(selection: KeyframeSelection, deltaTime: number): void
+  updateKeyframe(keyframe: KeyframeHandle | KeyframeAddress, patch: KeyframePatch): void
+  removeKeyframe(keyframe: KeyframeHandle | KeyframeAddress): void
   setInterpolation(
-    selection: KeyframeSelection,
-    interpolation: SegmentInterpolation,
+    keyframe: KeyframeHandle | KeyframeAddress,
+    preset: 'linear' | 'hold' | 'ease' | 'easeIn' | 'easeOut' | 'easeInOut',
   ): void
 
-  setDuration(duration: number): void
-  setFps(fps: number): void
+  forgetObject(object: TimelineObject | ObjectAddress): void
+  setDuration(sheetId: string, duration: number): void
+  setFps(sheetId: string, fps: number): void
 }
 ```
 
@@ -689,33 +699,26 @@ Para conservar la ergonomía de Theatre.js:
 ```ts
 interface TransactionOptions {
   label?: string
-  source?: EventSource
-  history?: 'record' | 'ignore'
 }
 ```
 
-`history: 'ignore'` debe reservarse para cargas, migraciones o reparaciones
-internas. La edición ordinaria siempre debe registrarse.
+Toda edición pública se registra en el historial. Las opciones de source y de
+ignorar historial permanecen como evolución futura.
 
 ## 11. Gestos temporales
 
-### `beginGesture(options)`
+### `timeline.store.beginGesture(label)`
 
-Crea una transacción temporal para drag, resize, edición de handles o value
-scrubbing.
+Crea una transacción temporal de bajo nivel para drag, resize, edición de
+handles o value scrubbing. Su traslado a `timeline.editor.beginGesture()` está
+pendiente.
 
 ```ts
-interface GestureOptions {
-  label?: string
-  source?: EventSource
-}
-
 interface EditingGesture {
-  readonly id: string
   readonly active: boolean
 
-  update(callback: (tx: TimelineTransaction) => void): void
-  commit(): ChangeSet
+  update(callback: (tx: StoreTransaction) => void): void
+  commit(): void
   cancel(): void
 }
 ```
@@ -723,16 +726,13 @@ interface EditingGesture {
 Ejemplo de drag:
 
 ```ts
-const gesture = timeline.editor.beginGesture({
-  label: 'Move keyframe',
-  source: 'user',
-})
+const gesture = timeline.store.beginGesture('Move keyframe')
 
 function onPointerMove(pointerX: number) {
   const time = snapToFrame(viewport.xToTime(pointerX), sequence.fps)
 
   gesture.update((tx) => {
-    tx.updateKeyframe(trackId, keyframeId, {time})
+    tx.updateKeyframe(keyframeAddress, {position: time})
   })
 }
 
@@ -1461,10 +1461,7 @@ timeline.on('sequence:end', ({compositionId}) => {
 
 await timeline.ready
 
-void scene.sequence.play({
-  iterationCount: Infinity,
-  direction: 'normal',
-})
+scene.sequence.play({loop: true})
 
 // Limpieza
 unbind()
@@ -1474,22 +1471,22 @@ timeline.dispose()
 Edición programática:
 
 ```ts
-const {result: track} = timeline.editor.transaction((tx) =>
+const track = timeline.editor.transaction((tx) =>
   tx.sequence(torus.props.rotation.x),
 )
 
 timeline.editor.transaction((tx) => {
-  tx.addKeyframe(track.id, {
-    time: 0,
+  const first = tx.addKeyframe(track, {
+    position: 0,
     value: 0,
-    interpolation: {type: 'cubicBezier', controlPoints: [0.42, 0, 0.58, 1]},
   })
 
-  tx.addKeyframe(track.id, {
-    time: 3,
+  tx.addKeyframe(track, {
+    position: 3,
     value: 1,
-    interpolation: {type: 'linear'},
   })
+
+  tx.setInterpolation(first, 'easeInOut')
 }, {label: 'Animate rotation X'})
 ```
 
@@ -1626,20 +1623,20 @@ utilice.
 
 ### API mínima inicial
 
-Implementar primero:
-
-- `createTimeline()` y `timeline.ready`.
-- `composition()` y `object()`.
-- Props numéricas, boolean y compound.
-- `onValuesChange()` y bindings.
-- `Sequence.position`, `play()`, `pause()` y `seek()`.
-- Consulta estable de tracks y keyframes.
-- `transaction()` y `beginGesture()`.
-- Undo/redo.
-- `serialize()` y carga validada.
-- Eventos `document:change`, `sequence:*`, `object:valuesChange`,
-  `history:*`, `warning` y `error`.
-- `TimelineView.mount()`, `ResizeObserver` y eventos propios de cada vista.
+- [x] `createTimeline()` y `timeline.ready`.
+- [x] `composition()`, `sheet()` y `object()`.
+- [x] Todos los tipos de props acordados e interpoladores personalizados.
+- [x] `onValuesChange()` y bindings.
+- [x] `Sequence.position`, `play()`, `pause()` y `seek()`.
+- [x] Consulta estable de tracks y keyframes.
+- [x] `timeline.editor.transaction()` y gestos en el store de bajo nivel.
+- [x] Undo/redo.
+- [x] `serialize()` y carga validada en Theatre.js 0.7.2.
+- [x] Eventos básicos `document:*`, `history:change` y `sequence:*`.
+- [x] `Timeline411HtmlView.mount()`, `ResizeObserver` y eventos de vista.
+- [ ] Sobres de eventos, `warning`, `error`, eventos detallados de objetos y
+      transacciones.
+- [ ] Promover los gestos de edición desde el store a `timeline.editor`.
 
 ### Segunda etapa
 

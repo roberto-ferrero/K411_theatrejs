@@ -1,7 +1,7 @@
 export type SerializablePrimitive = string | number | boolean
 
 export interface SerializableMap {
-  [key: string]: SerializableValue
+  [key: string]: SerializableValue | undefined
 }
 
 export type SerializableValue = SerializablePrimitive | SerializableMap
@@ -66,6 +66,15 @@ export interface TrackAddress {
   trackId: string
 }
 
+export interface ObjectAddress {
+  sheetId: string
+  objectKey: string
+}
+
+export interface PropertyAddress extends ObjectAddress {
+  path: PropertyPath
+}
+
 export interface KeyframeAddress extends TrackAddress {
   keyframeId: string
 }
@@ -80,6 +89,7 @@ export function cloneDocument(document: TimelineDocument): TimelineDocument {
   return JSON.parse(JSON.stringify(document)) as TimelineDocument
 }
 
-export function cloneValue<T extends SerializableValue>(value: T): T {
+export function cloneValue<T extends SerializableValue | undefined>(value: T): T {
+  if (typeof structuredClone === 'function') return structuredClone(value)
   return JSON.parse(JSON.stringify(value)) as T
 }

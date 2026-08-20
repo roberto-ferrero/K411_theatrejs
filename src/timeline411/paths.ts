@@ -39,13 +39,42 @@ export function getValueAtPath(
   target: SerializableMap,
   path: PropertyPath,
 ): SerializableValue | undefined {
-  let current: SerializableValue = target
+  let current: SerializableValue | undefined = target
   for (const part of path) {
     if (!isSerializableMap(current)) return undefined
     current = current[part]
     if (typeof current === 'undefined') return undefined
   }
   return current
+}
+
+export function unsetValueAtPath(
+  target: SerializableMap,
+  path: PropertyPath,
+): boolean {
+  if (path.length === 0) throw new Error('Un property path no puede estar vacío')
+
+  const parents: Array<{map: SerializableMap; key: string}> = []
+  let current = target
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const key = path[index]
+    const child = current[key]
+    if (!isSerializableMap(child)) return false
+    parents.push({map: current, key})
+    current = child
+  }
+
+  const leaf = path[path.length - 1]
+  if (!Object.prototype.hasOwnProperty.call(current, leaf)) return false
+  delete current[leaf]
+
+  for (let index = parents.length - 1; index >= 0; index -= 1) {
+    const {map, key} = parents[index]
+    const child = map[key]
+    if (!isSerializableMap(child) || Object.keys(child).length > 0) break
+    delete map[key]
+  }
+  return true
 }
 
 export function isSerializableMap(

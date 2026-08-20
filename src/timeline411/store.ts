@@ -1,6 +1,9 @@
 import type {
   EasingPreset,
   KeyframeAddress,
+  ObjectAddress,
+  PropertyAddress,
+  SerializableMap,
   SerializableValue,
   TheatreBasicKeyframedTrack,
   TheatreKeyframe,
@@ -8,6 +11,7 @@ import type {
   TrackAddress,
 } from './model'
 import {cloneDocument, cloneValue} from './model'
+import {encodePropertyPath, setValueAtPath, unsetValueAtPath} from './paths'
 import {validateTheatreProjectState} from './validation'
 
 export type StoreChangeKind =
@@ -49,11 +53,23 @@ export interface KeyframePatch {
 }
 
 export interface TimelineTransaction {
+  ensureSheet(sheetId: string, options?: {length?: number; fps?: number}): void
+  ensureObject(address: ObjectAddress): void
+  forgetObject(address: ObjectAddress): void
+  setStaticValue(address: PropertyAddress, value: SerializableValue): void
+  unsetStaticValue(address: PropertyAddress): void
+  sequenceProperty(
+    address: PropertyAddress,
+    options?: {trackId?: string; debugName?: string},
+  ): string
+  unsequenceProperty(address: PropertyAddress): void
+  removeTrack(address: TrackAddress): void
   addKeyframe(address: TrackAddress, keyframe: NewKeyframe): string
   updateKeyframe(address: KeyframeAddress, patch: KeyframePatch): void
   removeKeyframe(address: KeyframeAddress): void
   setInterpolation(address: KeyframeAddress, preset: EasingPreset): void
   setLength(sheetId: string, length: number): void
+  setFps(sheetId: string, fps: number): void
 }
 
 export interface EditingGesture {
@@ -70,6 +86,12 @@ interface HistoryEntry {
 
 type StoreListener = (change: StoreChange) => void
 
+export type TimelineIdFactory = (prefix: string) => string
+
+export interface TimelineStoreOptions {
+  readonly idFactory?: TimelineIdFactory
+}
+
 export class TimelineStore {
   private documentValue: TimelineDocument
   private revisionValue = 0
@@ -77,10 +99,12 @@ export class TimelineStore {
   private readonly past: HistoryEntry[] = []
   private readonly future: HistoryEntry[] = []
   private activeGesture = false
+  private readonly idFactory: TimelineIdFactory
 
-  constructor(document: TimelineDocument) {
+  constructor(document: TimelineDocument, options: TimelineStoreOptions = {}) {
     validateTheatreProjectState(document)
     this.documentValue = cloneDocument(document)
+    this.idFactory = options.idFactory ?? createEntityId
   }
 
   get document(): TimelineDocument {
@@ -112,19 +136,23 @@ export class TimelineStore {
     return () => this.listeners.delete(listener)
   }
 
-  transaction(
+  transaction<Result>(
     label: string,
-    callback: (transaction: TimelineTransaction) => void,
-  ): void {
+    callback: (transaction: TimelineTransaction) => Result,
+  ): Result {
     if (this.activeGesture) {
       throw new Error('No se puede abrir una transacción durante un gesto')
     }
     const before = cloneDocument(this.documentValue)
     const draft = cloneDocument(this.documentValue)
-    callback(new TimelineTransactionImplementation(draft))
+    const result = callback(
+      new TimelineTransactionImplementation(draft, this.idFactory),
+    )
     validateTheatreProjectState(draft)
-    if (documentsAreEqual(before, draft)) return
-    this.commitDocument(before, draft, label, 'commit')
+    if (!documentsAreEqual(before, draft)) {
+      this.commitDocument(before, draft, label, 'commit')
+    }
+    return result
   }
 
   beginGesture(label: string): EditingGesture {
@@ -150,7 +178,7 @@ export class TimelineStore {
       update: (callback) => {
         assertOpen()
         preview = cloneDocument(before)
-        callback(new TimelineTransactionImplementation(preview))
+        callback(new TimelineTransactionImplementation(preview, this.idFactory))
         validateTheatreProjectState(preview)
         this.documentValue = preview
         this.emit({
@@ -186,7 +214,11 @@ export class TimelineStore {
     const entry = this.past.pop()
     if (!entry) return false
     this.future.push({document: cloneDocument(this.documentValue), label: entry.label})
-    this.documentValue = addRevision(entry.document, this.documentValue.revisionHistory)
+    this.documentValue = addRevision(
+      entry.document,
+      this.documentValue.revisionHistory,
+      this.idFactory,
+    )
     this.revisionValue += 1
     this.emit({
       kind: 'undo',
@@ -202,7 +234,11 @@ export class TimelineStore {
     const entry = this.future.pop()
     if (!entry) return false
     this.past.push({document: cloneDocument(this.documentValue), label: entry.label})
-    this.documentValue = addRevision(entry.document, this.documentValue.revisionHistory)
+    this.documentValue = addRevision(
+      entry.document,
+      this.documentValue.revisionHistory,
+      this.idFactory,
+    )
     this.revisionValue += 1
     this.emit({
       kind: 'redo',
@@ -235,7 +271,7 @@ export class TimelineStore {
   ): void {
     this.past.push({document: before, label})
     this.future.length = 0
-    this.documentValue = addRevision(draft, before.revisionHistory)
+    this.documentValue = addRevision(draft, before.revisionHistory, this.idFactory)
     this.revisionValue += 1
     this.emit({kind, document: this.documentValue, revision: this.revisionValue, label})
   }
@@ -246,7 +282,111 @@ export class TimelineStore {
 }
 
 class TimelineTransactionImplementation implements TimelineTransaction {
-  constructor(private readonly draft: TimelineDocument) {}
+  constructor(
+    private readonly draft: TimelineDocument,
+    private readonly idFactory: TimelineIdFactory,
+  ) {}
+
+  ensureSheet(
+    sheetId: string,
+    options: {length?: number; fps?: number} = {},
+  ): void {
+    if (sheetId.length === 0) throw new Error('El ID de la sheet no puede estar vacío')
+    const existing = this.draft.sheetsById[sheetId]
+    if (existing) {
+      if (!existing.sequence) {
+        existing.sequence = createSequence(options.length, options.fps)
+      }
+      return
+    }
+    this.draft.sheetsById[sheetId] = {
+      staticOverrides: {byObject: {}},
+      sequence: createSequence(options.length, options.fps),
+    }
+  }
+
+  ensureObject(address: ObjectAddress): void {
+    this.ensureSheet(address.sheetId)
+    const sheet = this.draft.sheetsById[address.sheetId]
+    const sequence = sheet.sequence as NonNullable<typeof sheet.sequence>
+    sheet.staticOverrides.byObject[address.objectKey] ??= {}
+    sequence.tracksByObject[address.objectKey] ??= {
+      trackIdByPropPath: {},
+      trackData: {},
+    }
+  }
+
+  forgetObject(address: ObjectAddress): void {
+    const sheet = this.draft.sheetsById[address.sheetId]
+    if (!sheet) return
+    delete sheet.staticOverrides.byObject[address.objectKey]
+    if (sheet.sequence) delete sheet.sequence.tracksByObject[address.objectKey]
+  }
+
+  setStaticValue(address: PropertyAddress, value: SerializableValue): void {
+    this.ensureObject(address)
+    const object = this.draft.sheetsById[address.sheetId].staticOverrides.byObject[
+      address.objectKey
+    ] as SerializableMap
+    setValueAtPath(object, address.path, cloneValue(value))
+  }
+
+  unsetStaticValue(address: PropertyAddress): void {
+    const object =
+      this.draft.sheetsById[address.sheetId]?.staticOverrides.byObject[
+        address.objectKey
+      ]
+    if (object) unsetValueAtPath(object, address.path)
+  }
+
+  sequenceProperty(
+    address: PropertyAddress,
+    options: {trackId?: string; debugName?: string} = {},
+  ): string {
+    this.ensureObject(address)
+    const objectTracks = this.draft.sheetsById[address.sheetId].sequence
+      ?.tracksByObject[address.objectKey]
+    if (!objectTracks) throw new Error('No se pudieron crear los tracks del objeto')
+    const encodedPath = encodePropertyPath(address.path)
+    const existing = objectTracks.trackIdByPropPath[encodedPath]
+    if (existing) return existing
+
+    const trackId = options.trackId ?? this.idFactory('track')
+    if (objectTracks.trackData[trackId]) {
+      throw new Error(`Track ID duplicado: ${trackId}`)
+    }
+    objectTracks.trackIdByPropPath[encodedPath] = trackId
+    objectTracks.trackData[trackId] = {
+      type: 'BasicKeyframedTrack',
+      __debugName:
+        options.debugName ?? `${address.objectKey}:${encodePropertyPath(address.path)}`,
+      keyframes: [],
+    }
+    return trackId
+  }
+
+  unsequenceProperty(address: PropertyAddress): void {
+    const objectTracks = this.draft.sheetsById[address.sheetId]?.sequence
+      ?.tracksByObject[address.objectKey]
+    if (!objectTracks) return
+    const encodedPath = encodePropertyPath(address.path)
+    const trackId = objectTracks.trackIdByPropPath[encodedPath]
+    if (!trackId) return
+    delete objectTracks.trackIdByPropPath[encodedPath]
+    delete objectTracks.trackData[trackId]
+  }
+
+  removeTrack(address: TrackAddress): void {
+    const objectTracks = this.draft.sheetsById[address.sheetId]?.sequence
+      ?.tracksByObject[address.objectKey]
+    if (!objectTracks) return
+    for (const [encodedPath, trackId] of Object.entries(
+      objectTracks.trackIdByPropPath,
+    )) {
+      if (trackId === address.trackId) delete objectTracks.trackIdByPropPath[encodedPath]
+    }
+    delete objectTracks.trackData[address.trackId]
+  }
 
   addKeyframe(address: TrackAddress, keyframe: NewKeyframe): string {
     const track = getTrack(this.draft, address)
@@ -258,7 +398,7 @@ class TimelineTransactionImplementation implements TimelineTransaction {
       return existing.id
     }
 
-    const id = keyframe.id ?? createEntityId('kf')
+    const id = keyframe.id ?? this.idFactory('kf')
     if (track.keyframes.some((candidate) => candidate.id === id)) {
       throw new Error(`Keyframe ID duplicado: ${id}`)
     }
@@ -329,6 +469,15 @@ class TimelineTransactionImplementation implements TimelineTransaction {
     if (!sequence) throw new Error(`La sheet ${sheetId} no tiene sequence`)
     sequence.length = length
   }
+
+  setFps(sheetId: string, fps: number): void {
+    if (!Number.isFinite(fps) || fps <= 0) {
+      throw new Error('Los FPS deben ser mayores que cero')
+    }
+    const sequence = this.draft.sheetsById[sheetId]?.sequence
+    if (!sequence) throw new Error(`La sheet ${sheetId} no tiene sequence`)
+    sequence.subUnitsPerUnit = fps
+  }
 }
 
 const easingPresetPoints: Record<
@@ -370,10 +519,29 @@ function sortKeyframes(track: TheatreBasicKeyframedTrack): void {
 function addRevision(
   document: TimelineDocument,
   previousHistory: readonly string[],
+  idFactory: TimelineIdFactory,
 ): TimelineDocument {
   const result = cloneDocument(document)
-  result.revisionHistory = [createEntityId('rev'), ...previousHistory].slice(0, 50)
+  result.revisionHistory = [idFactory('rev'), ...previousHistory].slice(0, 50)
   return result
+}
+
+function createSequence(
+  length = 10,
+  fps = 30,
+): NonNullable<TimelineDocument['sheetsById'][string]['sequence']> {
+  if (!Number.isFinite(length) || length <= 0) {
+    throw new Error('La duración inicial debe ser mayor que cero')
+  }
+  if (!Number.isFinite(fps) || fps <= 0) {
+    throw new Error('Los FPS iniciales deben ser mayores que cero')
+  }
+  return {
+    type: 'PositionalSequence',
+    length,
+    subUnitsPerUnit: fps,
+    tracksByObject: {},
+  }
 }
 
 export function createEntityId(prefix: string): string {
