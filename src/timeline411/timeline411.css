@@ -462,7 +462,7 @@
 
 .k411-timeline-keyframe {
   position: absolute;
-  z-index: 7;
+  z-index: 10;
   width: 11px;
   height: 11px;
   padding: 0;
@@ -470,12 +470,16 @@
   border-radius: 2px;
   background: var(--k411-accent);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
-  cursor: grab;
+  cursor: pointer;
   transform: translate(-50%, -50%) rotate(45deg);
 }
 
 .k411-timeline-keyframe:hover {
   filter: brightness(1.2);
+}
+
+.k411-timeline-keyframe:active {
+  cursor: grabbing;
 }
 
 .k411-timeline-keyframe--selected {
@@ -494,21 +498,33 @@
 
 .k411-timeline-playhead {
   position: absolute;
-  z-index: 9;
+  z-index: 8;
   top: 0;
   bottom: 0;
   width: 1px;
-  padding: 0;
-  border: 0;
   background: var(--k411-accent);
-  cursor: ew-resize;
+  pointer-events: none;
   transform: translateX(-0.5px);
 }
 
-.k411-timeline-playhead::before {
+.k411-timeline-playhead-handle {
+  position: absolute;
+  z-index: 9;
+  top: 0;
+  width: 15px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  cursor: ew-resize;
+  transform: translateX(-50%);
+}
+
+.k411-timeline-playhead-handle::before {
   position: absolute;
   top: 0;
-  left: -5px;
+  left: 2px;
   width: 11px;
   height: 10px;
   border-radius: 1px 1px 5px 5px;
@@ -516,10 +532,14 @@
   content: "";
 }
 
-.k411-timeline-playhead::after {
-  position: absolute;
-  inset: 0 -5px;
-  content: "";
+.k411-timeline-playhead-handle:hover::before,
+.k411-timeline-playhead-handle:focus-visible::before {
+  filter: brightness(1.2);
+}
+
+.k411-timeline-playhead-handle:focus-visible {
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgb(98 184 235 / 65%);
 }
 
 @media (prefers-reduced-motion: reduce) {

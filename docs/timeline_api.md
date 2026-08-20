@@ -116,7 +116,9 @@ playhead. Se activa al seleccionar un keyframe y permite cambiar su tiempo con
 permanecer dentro de `[0, duración]` y no puede coincidir con otro keyframe del
 mismo track. Una edición válida usa `updateKeyframe()` dentro de una transacción
 reversible y mueve el playhead al nuevo tiempo. La selección y el campo `KF`
-siguen activos si el playhead se desplaza por separado.
+siguen activos si el playhead se desplaza por separado. Si no hay un keyframe
+seleccionado, `KF` queda vacío y deshabilitado; la posición del playhead se
+muestra exclusivamente en su propio campo.
 
 Cada fila de propiedad primitiva incluye un rombo `◇/◆` para añadir o quitar un
 keyframe en el playhead. El doble clic sobre la lane aplica la misma operación en
@@ -124,6 +126,19 @@ el tiempo apuntado. La primera alta sobre una propiedad estática crea el track;
 también se puede poblar un track vacío. Al quitar el último keyframe, la vista
 des-secuencia el track y conserva el valor evaluado como static override. Estas
 reglas se implementan en el editor y pueden reutilizarse desde HTML o WebGL.
+
+Un clic sencillo con el botón izquierdo sobre el fondo temporal o una lane
+vacía deselecciona el keyframe activo sin mover el playhead. El campo `KF` queda
+vacío y deshabilitado, el selector de interpolación se desactiva y la vista emite
+`selection:change`. Los keyframes, el ruler, el playhead y los gestos de pan o
+drag quedan excluidos; el doble clic de creación continúa funcionando.
+
+Si un keyframe coincide con la línea vertical del playhead, el keyframe tiene
+prioridad de puntero. La vista HTML lo apila por encima de la línea, muestra
+cursor de mano y reserva `ew-resize` para el ruler y el handle superior del
+playhead. La línea que atraviesa las propiedades es sólo visual y utiliza
+`pointer-events: none`; no permite mover el playhead desde las filas. El drag del
+keyframe actualiza su tiempo con snapping y desplaza simultáneamente el playhead.
 
 Eventos del núcleo implementados:
 

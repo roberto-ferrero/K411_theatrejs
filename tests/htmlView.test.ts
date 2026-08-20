@@ -272,6 +272,12 @@ describe('vista Timeline 411 HTML', () => {
     )
     if (!keyframeTime) throw new Error('No se encontró el editor de tiempo del keyframe')
     expect(keyframeTime.disabled).toBe(true)
+    expect(keyframeTime.value).toBe('')
+    expect(keyframeTime.title).toMatch(/Selecciona un keyframe/)
+
+    timeline.player.seek(1)
+    expect(keyframeTime.disabled).toBe(true)
+    expect(keyframeTime.value).toBe('')
 
     const lastXKeyframe = [...document.querySelectorAll<HTMLButtonElement>(
       '.k411-timeline-keyframe',
@@ -339,6 +345,7 @@ describe('vista Timeline 411 HTML', () => {
       .querySelector<HTMLElement>('[data-timeline411-view]')
       ?.dispatchEvent(new KeyboardEvent('keydown', {key: 'Delete', bubbles: true}))
     expect(keyframeTime.disabled).toBe(true)
+    expect(keyframeTime.value).toBe('')
 
     view.dispose()
     timeline.dispose()
@@ -408,6 +415,142 @@ describe('vista Timeline 411 HTML', () => {
     expect(getWireframeTrack()?.keyframes).toEqual([
       expect.objectContaining({position: 2, value: true}),
     ])
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('deselecciona con clic sencillo en el fondo sin mover el playhead', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    const selections: Array<string | undefined> = []
+    view.on('selection:change', ({selection}) => {
+      selections.push(selection?.keyframeId)
+    })
+    view.mount('#timeline-test')
+
+    const keyframe = [...document.querySelectorAll<HTMLButtonElement>(
+      '.k411-timeline-keyframe',
+    )].find((button) => button.title === 'x: 3.000s')
+    if (!keyframe) throw new Error('No se encontró el keyframe de x')
+    keyframe.click()
+    expect(timeline.player.position).toBe(3)
+
+    const keyframeTime = document.querySelector<HTMLInputElement>(
+      '.k411-timeline-keyframe-time-input',
+    )
+    const interpolation = document.querySelector<HTMLSelectElement>(
+      '.k411-timeline-preset',
+    )
+    expect(keyframeTime?.disabled).toBe(false)
+    expect(interpolation?.disabled).toBe(false)
+
+    document
+      .querySelector<HTMLElement>('.k411-timeline-ruler')
+      ?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
+    expect(keyframeTime?.disabled).toBe(false)
+
+    document
+      .querySelector<HTMLElement>('.k411-timeline-lane--track')
+      ?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
+    expect(timeline.player.position).toBe(3)
+    expect(keyframeTime?.disabled).toBe(true)
+    expect(keyframeTime?.value).toBe('')
+    expect(interpolation?.disabled).toBe(true)
+    expect(
+      document.querySelector('.k411-timeline-keyframe--selected'),
+    ).toBeNull()
+    expect(selections.at(-1)).toBeUndefined()
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('arrastra el keyframe y desplaza el playhead de forma sincronizada', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+    view.viewport.setMetrics(3, 30, 300)
+
+    const keyframe = [...document.querySelectorAll<HTMLButtonElement>(
+      '.k411-timeline-keyframe',
+    )].find((button) => button.title === 'x: 3.000s')
+    const playhead = document.querySelector<HTMLButtonElement>(
+      '.k411-timeline-playhead',
+    )
+    if (!keyframe || !playhead) {
+      throw new Error('No se encontraron el keyframe y el playhead')
+    }
+    keyframe.dispatchEvent(
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 300,
+      }),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointermove', {bubbles: true, button: 0, clientX: 200}),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointerup', {bubbles: true, button: 0, clientX: 200}),
+    )
+
+    const moved = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde?.keyframes.find(
+        (candidate) => candidate.id === '6qCOzmWF9R',
+      )
+    expect(moved?.position).toBe(2)
+    expect(timeline.player.position).toBe(2)
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '.k411-timeline-keyframe-time-input',
+      )?.value,
+    ).toBe('2.000')
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('permite manejar el playhead sólo desde el ruler y su handle superior', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+    view.viewport.setMetrics(3, 30, 300)
+
+    const line = document.querySelector<HTMLElement>('.k411-timeline-playhead')
+    const handle = document.querySelector<HTMLButtonElement>(
+      '.k411-timeline-playhead-handle',
+    )
+    const ruler = document.querySelector<HTMLElement>('.k411-timeline-ruler')
+    if (!line || !handle || !ruler) {
+      throw new Error('No se encontraron las partes del playhead')
+    }
+    expect(line.tagName).toBe('SPAN')
+    expect(line.getAttribute('aria-hidden')).toBe('true')
+
+    line.dispatchEvent(
+      new MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 150}),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointermove', {bubbles: true, button: 0, clientX: 200}),
+    )
+    window.dispatchEvent(new MouseEvent('pointerup', {bubbles: true, button: 0}))
+    expect(timeline.player.position).toBe(0)
+
+    handle.dispatchEvent(
+      new MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 150}),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointermove', {bubbles: true, button: 0, clientX: 200}),
+    )
+    window.dispatchEvent(new MouseEvent('pointerup', {bubbles: true, button: 0}))
+    expect(timeline.player.position).toBe(2)
+
+    ruler.dispatchEvent(
+      new MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 100}),
+    )
+    window.dispatchEvent(new MouseEvent('pointerup', {bubbles: true, button: 0}))
+    expect(timeline.player.position).toBe(1)
 
     view.dispose()
     timeline.dispose()

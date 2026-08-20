@@ -190,6 +190,7 @@ export class Timeline411HtmlView {
 
     const surface = document.createElement('div')
     surface.className = 'k411-timeline-surface'
+    surface.addEventListener('click', this.onSurfaceClick)
     this.surface = surface
     timelineScroll.appendChild(surface)
 
@@ -517,12 +518,17 @@ export class Timeline411HtmlView {
       }
     })
 
-    const playhead = document.createElement('button')
-    playhead.type = 'button'
+    const playhead = document.createElement('span')
     playhead.className = 'k411-timeline-playhead'
-    playhead.setAttribute('aria-label', 'Playhead')
-    playhead.addEventListener('pointerdown', this.startPlayheadDrag)
-    this.surface.appendChild(playhead)
+    playhead.setAttribute('aria-hidden', 'true')
+
+    const playheadHandle = document.createElement('button')
+    playheadHandle.type = 'button'
+    playheadHandle.className = 'k411-timeline-playhead-handle'
+    playheadHandle.setAttribute('aria-label', 'Mover cabeza reproductora')
+    playheadHandle.title = 'Arrastrar cabeza reproductora'
+    playheadHandle.addEventListener('pointerdown', this.startPlayheadDrag)
+    this.surface.append(playhead, playheadHandle)
     this.updatePlayback()
     this.syncTreeScroll()
   }
@@ -577,10 +583,15 @@ export class Timeline411HtmlView {
       '.k411-timeline-playhead',
     )
     if (playhead) {
-      playhead.style.left = `${timeToViewportSurfaceX(
+      const left = `${timeToViewportSurfaceX(
         state.position,
         this.viewport.snapshot,
       )}px`
+      playhead.style.left = left
+      const handle = this.surface.querySelector<HTMLElement>(
+        '.k411-timeline-playhead-handle',
+      )
+      if (handle) handle.style.left = left
     }
     this.updateTreeValues()
   }
@@ -637,6 +648,8 @@ export class Timeline411HtmlView {
       this.keyframeTimeEditDirty = false
       this.keyframeTimeInput.disabled = true
       this.keyframeTimeInput.value = ''
+      this.keyframeTimeInput.title =
+        'Selecciona un keyframe para editar su tiempo'
       this.keyframeTimeInput.setCustomValidity('')
       if (this.interpolationSelect) this.interpolationSelect.disabled = true
       if (hadSelection) {
@@ -645,6 +658,7 @@ export class Timeline411HtmlView {
       return
     }
     this.keyframeTimeInput.disabled = false
+    this.keyframeTimeInput.title = 'Editar tiempo del keyframe seleccionado'
     this.keyframeTimeInput.step = String(1 / this.timeline.getFps(this.sheetId))
     if (
       !force &&
@@ -943,6 +957,18 @@ export class Timeline411HtmlView {
     this.root?.focus({preventScroll: true})
   }
 
+  private clearKeyframeSelectionFromSurface(): void {
+    if (!this.selected) return
+    this.selected = undefined
+    if (this.interpolationSelect) this.interpolationSelect.disabled = true
+    this.surface
+      ?.querySelector('.k411-timeline-keyframe--selected')
+      ?.classList.remove('k411-timeline-keyframe--selected')
+    this.updateKeyframeTimeInput(true)
+    this.events.emit('selection:change', {selection: undefined})
+    this.root?.focus({preventScroll: true})
+  }
+
   private toggleKeyframe(row: TimelineRow, requestedTime: number): void {
     if (!isPrimitivePropertyRow(row)) return
     const time = snapToFrame(requestedTime, this.timeline.getFps(this.sheetId))
@@ -1136,6 +1162,20 @@ export class Timeline411HtmlView {
       (horizontalDelta / snapshot.width) *
       (snapshot.visibleEnd - snapshot.visibleStart)
     this.viewport.panBy(deltaTime)
+  }
+
+  private readonly onSurfaceClick = (event: MouseEvent): void => {
+    if (event.button !== 0 || this.spacePressed || !this.selected) return
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (
+      target.closest(
+        '.k411-timeline-keyframe, .k411-timeline-playhead, .k411-timeline-playhead-handle, .k411-timeline-ruler',
+      )
+    ) {
+      return
+    }
+    this.clearKeyframeSelectionFromSurface()
   }
 
   private readonly startPanDrag = (event: PointerEvent): void => {

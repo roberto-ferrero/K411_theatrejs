@@ -419,6 +419,9 @@ keyframe ni elimina la selección. Al confirmar, el tiempo se ajusta al frame m�
 cercano, se valida contra `[0, duración]` y se guarda mediante una transacción
 con undo/redo. El playhead se sincroniza después con el nuevo tiempo.
 
+Sin un keyframe seleccionado, el campo `KF` permanece vacío y deshabilitado. No
+se utiliza para mostrar el playhead, que mantiene un indicador independiente.
+
 ### Keyframe Value
 
 Valor que el track alcanza en el tiempo del keyframe. Debe ser compatible con el
@@ -996,6 +999,17 @@ confirmada.
 
 Conjunto de entidades seleccionadas: objetos, tracks, keyframes o marcadores.
 
+### Background Deselection
+
+Liberación de la selección al hacer clic en una zona no interactiva del
+timeline. Timeline 411 la aplica con un clic izquierdo sencillo sobre una lane o
+el fondo temporal, sin cambiar el playhead. La deselección limpia el resaltado y
+los controles asociados y emite `selection:change`.
+
+El ruler, el playhead, los keyframes y los gestos de pan o drag no cuentan como
+fondo. La actualización se realiza sin reconstruir la superficie para conservar
+el doble clic de creación de keyframes.
+
 ### Primary Selection
 
 Elemento principal dentro de una selección múltiple. Puede actuar como referencia
@@ -1243,6 +1257,8 @@ Altura de una fila. Es necesaria para layout, virtualización y hit testing.
 ### Playhead Line
 
 Línea vertical que atraviesa el timeline y representa la posición actual.
+En Timeline 411 es puramente visual y utiliza `pointer-events: none`; el playhead
+sólo se manipula desde el ruler o desde su handle superior.
 
 ### Keyframe Glyph
 
@@ -1277,6 +1293,12 @@ Zoom cercano: 0f  1f  2f  3f
 ### Hit Testing
 
 Proceso de determinar qué elemento se encuentra bajo una coordenada.
+
+Cuando varias entidades coinciden, debe existir una prioridad explícita. En
+Timeline 411, un keyframe interactivo se resuelve antes que la línea del
+playhead: permite seleccionarlo y arrastrarlo aunque ambos compartan la misma
+coordenada temporal. La línea del playhead no participa en hit testing; sólo su
+handle superior y el ruler aceptan interacción manual.
 
 ### Picking
 

@@ -96,7 +96,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 7. La modificación usa `timeline.editor.transaction()`, participa en undo/redo
    y mueve el playhead al nuevo tiempo.
 8. El campo queda desactivado cuando no hay selección o el keyframe seleccionado
-   se elimina.
+   se elimina. En ese estado queda vacío y nunca replica la posición del
+   playhead.
 
 ### Decisiones de alta y baja desde una propiedad
 
@@ -115,6 +116,34 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    `PropertyAddress`, para no acoplar el controlador a la vista HTML.
 8. El tiempo se ajusta a frames, se valida contra la duración y cada acción
    participa en undo/redo.
+
+### Decisiones de deselección en el fondo
+
+1. Un clic sencillo con el botón izquierdo sobre una lane o zona vacía de la
+   superficie temporal deselecciona el keyframe activo.
+2. Deseleccionar no modifica la posición del playhead.
+3. Los keyframes, el ruler y el propio playhead no se consideran fondo.
+4. Los gestos de pan con espacio o botón central y los drags no deseleccionan.
+5. La operación limpia el resaltado, deshabilita el selector de interpolación,
+   vacía y deshabilita `KF`, y emite `selection:change`.
+6. La deselección no reconstruye la superficie, por lo que no interfiere con el
+   doble clic utilizado para crear keyframes.
+
+### Prioridad entre keyframe y playhead
+
+1. Cuando un keyframe coincide visualmente con la línea vertical del playhead,
+   el keyframe tiene prioridad de hit testing.
+2. Los keyframes interactivos usan `z-index: 10`, el handle superior del
+   playhead `z-index: 9` y su línea visual `z-index: 8`.
+3. El cursor sobre un keyframe es una mano (`pointer`) y durante la pulsación
+   pasa a `grabbing`; el cursor horizontal queda reservado para el ruler y el
+   handle superior del playhead.
+4. Al arrastrar un keyframe, el modelo se actualiza con snapping y el playhead
+   lo acompaña durante todo el gesto.
+5. La línea vertical del playhead usa `pointer-events: none`: no puede
+   manipularse desde las filas de objetos y propiedades.
+6. El movimiento manual del playhead sólo comienza desde el ruler o desde su
+   handle superior, cuya zona interactiva queda contenida en el ruler.
 
 ## Funcionalidades completadas
 
@@ -171,6 +200,12 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Alta y baja mediante doble clic en lanes estáticas, secuenciadas o vacías.
 - [x] Creación automática del track y des-secuenciación al eliminar su último
       keyframe, conservando el valor como static override.
+- [x] Deselección mediante clic sencillo en el fondo temporal sin mover el
+      playhead ni interferir con drag, pan o doble clic.
+- [x] Prioridad interactiva del keyframe sobre la línea del playhead cuando
+      ambos coinciden, con cursor y drag diferenciados.
+- [x] Línea del playhead puramente visual y manipulación limitada al ruler y al
+      handle superior.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -194,7 +229,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
 
-La suite actual contiene 38 pruebas. `npm test` y
+La suite actual contiene 41 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
