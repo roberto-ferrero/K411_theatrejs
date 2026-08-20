@@ -1,9 +1,9 @@
-# API y eventos de un timeline inspirado en Theatre.js
+# API y eventos de Timeline 411
 
 Este documento propone el contrato público para crear, consultar, editar y
-reproducir un timeline. La API toma como referencia la ergonomía de Theatre.js
-0.7.2, pero está diseñada para que el modelo, la lógica, la interacción y la
-representación permanezcan desacoplados.
+reproducir Timeline 411. La API toma como referencia la ergonomía de Theatre.js
+0.7.2, utiliza su mismo modelo JSON de animación y mantiene desacopladas la lógica,
+la interacción y la representación.
 
 > Estado: propuesta de diseño. Los nombres y contratos definidos aquí sirven
 > como objetivo para la implementación; no implican que toda la API exista aún.
@@ -50,7 +50,8 @@ La API debe permitir:
 - Observar cambios mediante eventos tipados.
 - Utilizar el mismo núcleo con una GUI HTML o WebGL.
 - Sustituir el reloj para tests, audio o exportación offline.
-- Importar y exportar datos sin acoplar el modelo al formato de Theatre.js.
+- Cargar estados exportados por Theatre.js 0.7.2 directamente.
+- Exportar un JSON que Theatre.js 0.7.2 pueda cargar sin ningún adaptador.
 
 La API no debe obligar a utilizar:
 
@@ -58,7 +59,23 @@ La API no debe obligar a utilizar:
 - DOM, SVG, Canvas o WebGL.
 - Three.js como modelo interno.
 - `requestAnimationFrame` como única fuente de tiempo.
-- El esquema JSON interno de Theatre.js como formato canónico.
+
+### Requisito de compatibilidad directa
+
+El estado de animación canónico de Timeline 411 es el `ProjectState` utilizado por
+Theatre.js 0.7.2. Esta equivalencia es un requisito, no una operación opcional de
+importación o exportación:
+
+```ts
+const state = timeline411.serialize()
+
+// Debe funcionar directamente, sin conversión.
+const project = getProject('Timeline 411 export', {state})
+```
+
+El JSON de animación no puede contener claves exclusivas de Timeline 411. Zoom,
+scroll, selección, paneles y configuración de vistas se guardan en un documento
+de editor separado.
 
 ## 2. Correspondencia con Theatre.js
 
@@ -107,7 +124,6 @@ Timeline
 └─ Editor API
    ├─ transaction()
    ├─ beginGesture()
-   ├─ selection
    └─ history
 
 Renderer (paquete separado)
@@ -122,7 +138,6 @@ Una posible distribución futura de paquetes sería:
 @timeline/editor     Comandos, transacciones, selección, historial e interacción
 @timeline/html       Renderer HTML/SVG
 @timeline/webgl      Renderer WebGL
-@timeline/theatre    Importador/exportador de Theatre.js
 ```
 
 ## 4. Creación del timeline
@@ -179,7 +194,7 @@ interface Timeline {
   getCompositions(): readonly Composition[]
 
   evaluate(time: number): TimelineSnapshot
-  serialize(options?: SerializeOptions): TimelineDocument
+  serialize(): TheatreProjectState
   replaceDocument(document: TimelineDocument): void
 
   on<K extends keyof TimelineEventMap>(
@@ -737,48 +752,160 @@ interface HistoryAPI {
 ## 13. Serialización
 
 ```ts
-interface SerializeOptions {
-  includeEditorState?: boolean
-  pretty?: boolean
+type TimelineDocument = TheatreProjectState
+
+interface TheatreProjectState {
+  sheetsById: Record<string, TheatreSheetState>
+  definitionVersion: '0.4.0'
+  revisionHistory: string[]
+}
+
+interface TheatreSheetState {
+  staticOverrides: {
+    byObject: Record<string, SerializableMap>
+  }
+  sequence?: TheatreSequenceState
+}
+
+interface TheatreSequenceState {
+  type: 'PositionalSequence'
+  length: number
+  subUnitsPerUnit: number
+  tracksByObject: Record<string, TheatreObjectTracksState>
+}
+
+interface TheatreObjectTracksState {
+  trackData: Record<string, TheatreBasicKeyframedTrack>
+  trackIdByPropPath: Record<string, string>
+}
+
+interface TheatreBasicKeyframedTrack {
+  type: 'BasicKeyframedTrack'
+  __debugName?: string
+  keyframes: TheatreKeyframe[]
+}
+
+interface TheatreKeyframe {
+  id: string
+  position: number
+  connectedRight: boolean
+  handles: [number, number, number, number]
+  value: SerializableValue
+  type?: 'bezier' | 'hold'
 }
 
 interface TimelineSerializer {
-  serialize(timeline: Timeline, options?: SerializeOptions): TimelineDocument
+  serialize(timeline: Timeline): TheatreProjectState
+  stringify(timeline: Timeline, options?: {space?: number}): string
   deserialize(input: unknown): TimelineDocument
 }
 ```
 
 ### `timeline.serialize()`
 
-Devuelve una copia JSON-compatible del documento. No incluye listeners, bindings,
-handles, clock ni renderer.
+Devuelve una copia del estado de proyecto directamente compatible con Theatre.js
+0.7.2. No incluye listeners, bindings, handles de API, clock, renderer ni estado de
+la interfaz.
 
-### Importación de Theatre.js
-
-Debe vivir en un adaptador independiente:
-
-```ts
-interface TheatreImporter {
-  importProject(state: unknown): ImportResult
-}
-
-interface ImportResult {
-  document: TimelineDocument
-  warnings: readonly ImportWarning[]
-}
-```
-
-El importador traduce concepts como:
+Las claves y valores deben conservar el significado exacto de Theatre.js:
 
 ```text
-sheetsById          ──► compositions
-tracksByObject      ──► tracks
-trackIdByPropPath   ──► propertyPath
-position            ──► time
-connectedRight      ──► segment interpolation
-handles             ──► incoming/outgoing Bezier handles
-staticOverrides     ──► static values
+sheetsById
+└─ <sheetId>
+   ├─ staticOverrides.byObject
+   └─ sequence
+      ├─ type: "PositionalSequence"
+      ├─ length
+      ├─ subUnitsPerUnit
+      └─ tracksByObject
+         └─ <objectKey>
+            ├─ trackIdByPropPath
+            └─ trackData
+               └─ <trackId>
+                  ├─ type: "BasicKeyframedTrack"
+                  └─ keyframes[]
 ```
+
+Reglas de compatibilidad:
+
+- `definitionVersion` será `"0.4.0"`, que es la versión del formato utilizado por
+  Theatre.js 0.7.2.
+- Los IDs de tracks, keyframes y revisiones deben ser estables y únicos.
+- `trackIdByPropPath` utiliza paths codificados con `JSON.stringify(path)`.
+- Los keyframes se ordenan por `position`.
+- Los handles mantienen el orden `[incomingX, incomingY, outgoingX, outgoingY]`.
+- El segmento A→B utiliza el handle de salida de A y el de entrada de B.
+- `connectedRight`, `type`, `position` y `value` conservan la semántica de
+  Theatre.js.
+- El serializer no renombra `Sheet` como `Composition` dentro del JSON.
+- No se añaden campos de Timeline 411, aunque parezcan inocuos.
+
+### Carga de un estado de Theatre.js
+
+No existe una fase de traducción. `deserialize()` valida el mismo modelo y lo
+utiliza como documento canónico:
+
+```ts
+const response = await fetch('/animation.json')
+const theatreState: unknown = await response.json()
+
+const document = serializer.deserialize(theatreState)
+const timeline = createTimeline({id: 'scene', document})
+```
+
+### Estado propio del editor
+
+La información visual se guarda separada para no invalidar la compatibilidad:
+
+```ts
+interface Timeline411EditorState {
+  readonly version: 1
+  readonly views: Readonly<Record<string, Timeline411ViewState>>
+}
+```
+
+Persistencia recomendada:
+
+```text
+animation.json              ProjectState compatible con Theatre.js 0.7.2
+timeline411.editor.json     Vistas, zoom, scroll, paneles y filas plegadas
+```
+
+La selección, hover, drag y snap activo son efímeros y no necesitan guardarse.
+
+### Definición de props y bindings
+
+Como ocurre en Theatre.js, el `ProjectState` no contiene por sí solo todo el
+schema de props ni las referencias a meshes. La aplicación continúa declarando
+los objetos y sus bindings en código:
+
+```ts
+const torus = composition.object('Torus Knot', {
+  rotation: compound({
+    x: numberProp(0),
+    y: numberProp(0),
+    z: numberProp(0),
+  }),
+  wireframe: booleanProp(false),
+})
+
+torus.bind(threeTorusBinding)
+```
+
+Los IDs de sheet, object y property path declarados en código deben coincidir con
+los del JSON para que sus tracks se resuelvan correctamente.
+
+### Prueba de compatibilidad obligatoria
+
+Cada versión del serializer debe superar al menos estas pruebas:
+
+1. Crear y editar una animación con Timeline 411.
+2. Serializar su `TheatreProjectState`.
+3. Pasarlo directamente a `getProject(uniqueId, {state})` de Theatre.js 0.7.2.
+4. Declarar los mismos objects y props.
+5. Verificar duración, keyframes, easing y valores evaluados.
+6. Cargar un estado exportado por Theatre.js en Timeline 411, volver a guardarlo y
+   comprobar que Theatre.js sigue aceptándolo.
 
 ## 14. Modelo general de eventos
 
@@ -1396,14 +1523,26 @@ Reglas:
 ### Versión del documento
 
 ```ts
-interface TimelineDocument {
-  readonly schemaVersion: number
-  // ...
+type TimelineDocument = TheatreProjectState
+
+interface TheatreProjectState {
+  sheetsById: Record<string, TheatreSheetState>
+  definitionVersion: '0.4.0'
+  revisionHistory: string[]
 }
 ```
 
-El serializer debe rechazar versiones futuras desconocidas y migrar versiones
-anteriores soportadas.
+Timeline 411 no introduce un `schemaVersion` propio dentro del documento de
+animación. Debe respetar `definitionVersion` y las estructuras esperadas por
+Theatre.js 0.7.2.
+
+Si en el futuro se soportan otras versiones de Theatre.js, la aplicación deberá
+seleccionar explícitamente el codec correspondiente. Nunca se migrará
+silenciosamente un archivo y se presentará como compatible con 0.7.2 sin superar
+las pruebas de carga directa.
+
+El sidecar `Timeline411EditorState` sí tiene su propia versión porque no se entrega
+a Theatre.js.
 
 ### Versión de la API
 
@@ -1450,7 +1589,7 @@ Implementar primero:
 - Playback alternado y rangos dinámicos.
 - Reloj de audio.
 - Copiar, pegar y escalar selecciones.
-- Importador de Theatre.js.
+- Persistencia del sidecar visual de Timeline 411.
 - Coalescing y filtros avanzados de eventos.
 
 ### Extensiones futuras

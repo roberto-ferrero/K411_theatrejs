@@ -1,8 +1,9 @@
-# Glosario y conceptos para un timeline inspirado en Theatre.js
+# Glosario y conceptos de Timeline 411
 
-Este documento define el vocabulario que se utilizará para estudiar Theatre.js y
-diseñar un timeline propio con el núcleo de datos y lógica separado de sus
-representaciones HTML, SVG, Canvas o WebGL.
+Este documento define el vocabulario utilizado para estudiar Theatre.js y diseñar
+Timeline 411 con el núcleo de lógica separado de sus representaciones HTML, SVG,
+Canvas o WebGL. Su estado de animación canónico utiliza el mismo modelo JSON que
+Theatre.js 0.7.2.
 
 La especificación propuesta para interactuar con el timeline y sus eventos se
 encuentra en [API y eventos del timeline](./timeline_api.md).
@@ -88,19 +89,20 @@ Props                 Snapping               SVG Renderer
 
 ### Timeline Document
 
-Documento serializable que contiene la definición persistente de una animación:
-duración, FPS, objetos, tracks, keyframes y configuración de interpolación.
+Alias público de Timeline 411 para el `ProjectState` compatible con Theatre.js
+0.7.2. Contiene `sheetsById`, `definitionVersion` y `revisionHistory`; dentro de
+cada sheet almacena duración, subdivisiones temporales, static overrides, tracks y
+keyframes.
 
-Debe ser la fuente de verdad de la animación y no debería contener referencias a
-elementos DOM, objetos Three.js, buffers WebGL ni componentes de una GUI.
+Es la fuente de verdad de la animación y no contiene referencias a elementos DOM,
+objetos Three.js, buffers WebGL ni estado propio de la GUI. El JSON producido debe
+poder entregarse directamente a `getProject(id, {state})` de Theatre.js 0.7.2.
 
 ### Project
 
 Contenedor raíz de Theatre.js. Agrupa sheets, estado exportado, configuración y
-recursos del proyecto.
-
-En una implementación propia sólo será necesario si queremos que un mismo archivo
-contenga varias composiciones o secuencias.
+recursos. Aunque Timeline 411 exponga handles con otros nombres, su JSON siempre
+conserva la estructura raíz de proyecto de Theatre.js.
 
 ### Sheet
 
@@ -118,7 +120,8 @@ Sheet: Animated scene
 ### Composition
 
 Nombre propuesto como alternativa a `Sheet`. Representa una unidad completa de
-animación con duración, tracks y objetos relacionados.
+animación con duración, tracks y objetos relacionados. Es un nombre de la API de
+Timeline 411; al serializar se guarda dentro de `sheetsById` como una sheet.
 
 ### Sheet Instance
 
@@ -144,22 +147,36 @@ posición del objeto en un array ni de su posición visual en el editor.
 ### Definition Version
 
 Versión del esquema utilizado para serializar el documento. Permite reconocer y
-migrar documentos creados con versiones anteriores.
+migrar documentos. Para compatibilidad con Theatre.js 0.7.2, Timeline 411 emite
+`definitionVersion: "0.4.0"`.
 
 ### Serialization
 
-Conversión del estado canónico a JSON u otro formato persistente. Debe estar
-separada del store, el evaluador y los renderers.
+Conversión del estado canónico al `ProjectState` de Theatre.js 0.7.2. Debe estar
+separada del store, el evaluador y los renderers y no debe añadir claves propias
+de Timeline 411.
 
 ### Deserialization
 
-Carga, validación y normalización de un documento serializado. Debe comprobar
-versiones, IDs duplicados, tipos, tiempos inválidos y keyframes desordenados.
+Carga y validación de un `ProjectState` de Theatre.js 0.7.2 sin transformarlo a un
+segundo modelo. Debe comprobar versión, IDs duplicados, tipos, tiempos inválidos y
+keyframes desordenados.
 
 ### Migration
 
-Transformación de una versión antigua del esquema a la versión actual. Se realiza
-antes de entregar el documento al store.
+Transformación explícita entre versiones del formato Theatre. No debe ocurrir de
+forma silenciosa ni afirmar compatibilidad 0.7.2 hasta superar una prueba de carga
+directa con `getProject()`.
+
+### Editor Sidecar
+
+Documento separado que guarda únicamente preferencias de Timeline 411: vistas,
+zoom, scroll, paneles y filas plegadas. No se mezcla con el JSON de animación.
+
+```text
+animation.json              Estado compatible con Theatre.js 0.7.2
+timeline411.editor.json     Estado visual exclusivo de Timeline 411
+```
 
 ## 3. Props y vinculación con objetos
 
@@ -1503,17 +1520,18 @@ Interfaz implementada por los renderers HTML, SVG, Canvas o WebGL.
 
 ### TimelineSerializer
 
-Guarda y carga el formato canónico propio.
+Guarda y carga directamente el `ProjectState` compatible con Theatre.js 0.7.2.
+No realiza una traducción a otro esquema ni añade estado visual.
 
-### TheatreImporter
+### TheatreProjectState
 
-Convierte un estado exportado por Theatre.js al modelo propio. El formato de
-Theatre no debería convertirse en nuestro modelo canónico.
+Nombre explícito del modelo JSON canónico. `TimelineDocument` es un alias público
+de este tipo para la API de Timeline 411.
 
-### TheatreExporter
+### Timeline411EditorSerializer
 
-Convierte el modelo propio a un formato compatible con Theatre.js cuando los
-conceptos tengan una correspondencia válida.
+Guarda y carga el sidecar del editor. Sus datos nunca forman parte del
+`TheatreProjectState` entregado a Theatre.js.
 
 ## 20. Términos ambiguos
 
@@ -1625,6 +1643,8 @@ InteractionController
 BindingAdapter
 TimelineRenderer
 TimelineSerializer
+TheatreProjectState
+Timeline411EditorState
 TimelineView
 TimelineEditorSession
 ```
