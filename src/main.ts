@@ -1,6 +1,7 @@
 import './style.css'
 import {createThreeScene} from './scene'
 import {connectTheatreTimeline} from './theatreTimeline'
+import {connectTimeline411Html} from './timeline411Bootstrap'
 
 type TimelineMode = 'theatre' | 'html'
 
@@ -48,7 +49,7 @@ function createTimelineSelector(): HTMLElement {
   const htmlButton = createOptionButton(
     '2',
     'Timeline 411 HTML',
-    'Escena preparada con un contenedor para el futuro timeline HTML.',
+    'Editor HTML/SVG conectado a la animación del torus.',
   )
   const webglButton = createOptionButton(
     '3',
@@ -154,10 +155,9 @@ function startHtmlMode(): void {
     throw new Error('No se pudo crear el contenedor del timeline HTML')
   }
 
-  // Punto de montaje para el futuro timeline 411 HTML. El target queda
-  // identificado sin añadir aún controles ni lógica de timeline.
   timelineContainer.dataset.timeline = '411-html'
   timelineContainer.dataset.targetObject = threeScene.torusKnot.name
+  connectTimeline411Html(threeScene, timelineContainer)
 }
 
 function createWorkspace(includeTimelineContainer: boolean): Workspace {
@@ -178,7 +178,7 @@ function createWorkspace(includeTimelineContainer: boolean): Workspace {
     timelineContainer.className = 'timeline-411-placeholder'
     timelineContainer.setAttribute(
       'aria-label',
-      'Contenedor reservado para Timeline 411 HTML',
+      'Timeline 411 HTML',
     )
     root.appendChild(timelineContainer)
   }

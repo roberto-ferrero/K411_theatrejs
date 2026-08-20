@@ -8,6 +8,64 @@ la interacción y la representación.
 > Estado: propuesta de diseño. Los nombres y contratos definidos aquí sirven
 > como objetivo para la implementación; no implican que toda la API exista aún.
 
+### Estado de implementación del MVP HTML (2026-08-20)
+
+La propuesta de este documento ya tiene un primer subconjunto funcional. La API
+disponible actualmente es:
+
+```ts
+const timeline = new Timeline411(theatreProjectState)
+
+timeline.document
+timeline.firstSheetId
+timeline.getDuration(sheetId)
+timeline.getFps(sheetId)
+timeline.evaluate(sheetId, time)
+timeline.bindObject(sheetId, objectKey, defaults, apply)
+timeline.serialize()
+timeline.stringify(2)
+timeline.on(eventName, listener)
+timeline.dispose()
+
+timeline.player.play({loop: true})
+timeline.player.pause()
+timeline.player.seek(time)
+timeline.player.subscribe(listener)
+
+timeline.store.transaction(label, callback)
+timeline.store.beginGesture(label)
+timeline.store.undo()
+timeline.store.redo()
+timeline.store.replace(document)
+
+const view = new Timeline411HtmlView(timeline, sheetId)
+view.mount('#timeline-411-html')
+view.unmount()
+view.on(eventName, listener)
+view.dispose()
+```
+
+La transacción expone en esta versión `addKeyframe()`, `updateKeyframe()`,
+`removeKeyframe()`, `setInterpolation()` y `setLength()`. El gesto expone
+`update()`, `commit()` y `cancel()`.
+
+Eventos del núcleo implementados:
+
+- `document:change` y `document:preview`.
+- `history:change`.
+- `sequence:position`, `sequence:play` y `sequence:pause`.
+
+Eventos propios de cada vista implementados:
+
+- `selection:change`.
+- `view:resize`.
+- `viewport:change`.
+- `panel:resize`.
+
+La API de `Composition`, los handles estables de objetos y tracks, el playback
+avanzado y los sobres de eventos enriquecidos permanecen como evolución
+posterior. El renderer WebGL tampoco forma parte de este MVP.
+
 El vocabulario empleado se define en el
 [glosario del timeline](./timeline_doc.md).
 

@@ -1,8 +1,13 @@
-# THREE.js with Theatre.js
+# Timeline 411 + Theatre.js
 
-Three.js scene animated with Theatre.js. The exported animation state lives in
-`src/state.json`; Theatre Studio is loaded only while running the development
-server.
+Laboratorio Three.js con dos modos seleccionables al iniciar:
+
+- `Timeline Theatre.js`: usa Theatre.js 0.7.2 y carga Studio en desarrollo.
+- `Timeline 411 HTML`: usa el núcleo propio desacoplado y una vista HTML/SVG.
+
+Ambos consumen `src/state.json`. Timeline 411 exporta el mismo modelo de estado,
+por lo que su `animation.json` se puede cargar directamente con
+`getProject(id, {state})` de Theatre.js 0.7.2.
 
 ## Scripts
 
@@ -16,6 +21,12 @@ npm run dev
 
 ```bash
 npm run build
+```
+
+- Run automated tests:
+
+```bash
+npm test
 ```
 
 - Preview the production build:
