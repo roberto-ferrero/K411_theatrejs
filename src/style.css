@@ -1,13 +1,225 @@
-* {
-  margin: 0;
-  padding: 0;
+:root {
+  color: #edf1f7;
+  background: #090b10;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html,
-body {
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
   overflow: hidden;
 }
 
-#webgl-canvas {
+button {
+  font: inherit;
+}
+
+.timeline-selector {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 20% 10%, rgb(38 91 127 / 35%), transparent 38%),
+    radial-gradient(circle at 90% 90%, rgb(101 54 154 / 24%), transparent 42%),
+    #090b10;
+}
+
+.timeline-selector__panel {
+  width: min(100%, 680px);
+  padding: clamp(24px, 5vw, 48px);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 20px;
+  background: rgb(18 22 31 / 92%);
+  box-shadow: 0 28px 90px rgb(0 0 0 / 45%);
+}
+
+.timeline-selector__eyebrow {
+  margin: 0 0 10px;
+  color: #6fc8ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.timeline-selector h1 {
+  margin: 0;
+  font-size: clamp(25px, 4vw, 38px);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.timeline-selector__options {
+  display: grid;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.timeline-option {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  min-height: 78px;
+  padding: 14px 18px;
+  color: inherit;
+  text-align: left;
+  border: 1px solid rgb(255 255 255 / 11%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 4%);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.timeline-option:not(:disabled):hover {
+  border-color: rgb(111 200 255 / 70%);
+  background: rgb(111 200 255 / 9%);
+  transform: translateY(-1px);
+}
+
+.timeline-option:not(:disabled):focus-visible {
+  outline: 3px solid rgb(111 200 255 / 45%);
+  outline-offset: 3px;
+}
+
+.timeline-option:disabled {
+  color: rgb(237 241 247 / 36%);
+  cursor: not-allowed;
+}
+
+.timeline-option__number {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: #9ed9ff;
+  font-weight: 750;
+  border: 1px solid rgb(111 200 255 / 25%);
+  border-radius: 9px;
+  background: rgb(111 200 255 / 9%);
+}
+
+.timeline-option:disabled .timeline-option__number {
+  color: inherit;
+  border-color: rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 3%);
+}
+
+.timeline-option__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.timeline-option__name {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.timeline-option__description {
+  overflow: hidden;
+  color: rgb(237 241 247 / 62%);
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.timeline-selector__status {
+  min-height: 20px;
+  margin: 18px 0 0;
+  color: rgb(237 241 247 / 62%);
+  font-size: 13px;
+}
+
+.timeline-selector__status--error {
+  color: #ff9f9f;
+}
+
+.workspace {
+  width: 100%;
+  height: 100%;
+}
+
+.workspace--with-timeline {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 320px;
+}
+
+.scene-container {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.scene-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
   outline: none;
+}
+
+.timeline-411-placeholder {
+  min-width: 0;
+  min-height: 0;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  background: #11141b;
+}
+
+@media (max-width: 520px) {
+  .timeline-selector {
+    padding: 14px;
+  }
+
+  .timeline-selector__panel {
+    padding: 22px 18px;
+    border-radius: 15px;
+  }
+
+  .timeline-option {
+    grid-template-columns: 38px minmax(0, 1fr);
+    min-height: 72px;
+    padding: 12px;
+  }
+
+  .timeline-option__number {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+@media (max-height: 560px) {
+  .timeline-selector {
+    align-items: start;
+    overflow-y: auto;
+  }
+
+  .timeline-selector__panel {
+    margin-block: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-option {
+    transition: none;
+  }
 }
