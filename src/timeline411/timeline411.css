@@ -259,6 +259,17 @@
   accent-color: var(--k411-accent);
 }
 
+.k411-timeline-value-editor[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.k411-timeline-value-editor[type="number"]::-webkit-inner-spin-button,
+.k411-timeline-value-editor[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
 .k411-timeline-divider {
   position: relative;
   z-index: 12;
