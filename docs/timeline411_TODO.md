@@ -68,6 +68,26 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 10. El viewport se conserva en memoria por vista hasta implementar el sidecar y
     nunca se incluye en `animation.json`.
 
+### Decisiones del árbol plegable
+
+1. Las filas de objeto y de grupo compuesto disponen de un botón de
+   despliegue; las propiedades hoja como `wireframe` no lo muestran.
+2. La capacidad de plegado se obtiene de la jerarquía de `TimelineRow`, sin
+   codificar nombres concretos como `rotation`, `position` o componentes XYZ.
+3. Plegar un objeto oculta todas sus propiedades y lanes descendientes. Plegar
+   un grupo oculta únicamente sus descendientes.
+4. La fila padre permanece visible y conserva sus keyframes agregados.
+5. El estado interno de los grupos se conserva al plegar y volver a desplegar
+   un objeto. Por ejemplo, `rotation` continúa plegado si ya lo estaba.
+6. `TimelineRowExpansionState` y `filterVisibleTimelineRows()` son
+   renderer-neutral; HTML sólo representa el botón y las filas resultantes.
+7. Cada vista tiene un estado de expansión independiente, inicialmente sólo en
+   memoria. La persistencia en `Timeline411EditorState` queda pendiente.
+8. Plegar filas no modifica el documento, el playhead, el historial ni
+   `animation.json`. Tampoco elimina selecciones de keyframes ocultos.
+9. El botón expone `aria-expanded`, conserva el foco tras el rerender y utiliza
+   `▾` para desplegado y `▸` para plegado.
+
 ### Decisiones de edición de duración
 
 1. La duración total se edita directamente desde la toolbar.
@@ -270,6 +290,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Borrado múltiple con `Delete`/`Backspace` y una sola entrada de historial.
 - [x] Evento `selection:change` compatible, con principal en `selection` y grupo
       completo en `selections`.
+- [x] Árbol plegable para objetos y grupos compuestos, con lanes filtradas y
+      estado anidado independiente por vista.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -293,7 +315,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
 
-La suite actual contiene 47 pruebas. `npm test` y
+La suite actual contiene 51 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -309,7 +331,7 @@ La suite actual contiene 47 pruebas. `npm test` y
 ### Dope Sheet y viewport
 
 - [x] Zoom, pan, visible range y scrollbar horizontal.
-- [ ] Árbol plegable y estado de filas por vista.
+- [x] Árbol plegable y estado de filas por vista en memoria.
 - [x] Indicadores editables de duración y posición.
 - [ ] Focus Range completo y cortinas exteriores.
 - [x] Grid totalmente adaptativo al rango visible.

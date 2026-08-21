@@ -1270,6 +1270,28 @@ Object
    └─ Leaf Prop / Track
 ```
 
+En Timeline 411, las filas de objeto y compound prop son plegables. Las hojas no
+lo son. Plegar una fila oculta tanto sus descendientes del árbol como sus lanes,
+pero conserva visible la fila padre y sus keyframes agregados.
+
+### Row Expansion State
+
+Estado renderer-neutral que contiene los IDs de filas plegadas. Pertenece a una
+vista y no al documento de animación. Timeline 411 lo representa mediante
+`TimelineRowExpansionState` y deriva las filas visibles con
+`filterVisibleTimelineRows()`.
+
+El plegado de un padre no borra el estado de sus hijos: si `rotation` estaba
+plegado, continúa estándolo después de plegar y volver a desplegar su objeto. En
+la fase actual se conserva en memoria y su persistencia futura pertenece al
+sidecar `Timeline411EditorState`, nunca a `animation.json`.
+
+### Disclosure Button
+
+Botón `▾/▸` asociado a una fila con descendientes. Expone `aria-expanded` y
+alterna únicamente el estado visual de la vista. No modifica el playhead, el
+historial, los keyframes ni la selección vigente.
+
 ### Property Value Cell
 
 Celda situada a la derecha de una `Tree Row` primitiva. Muestra el valor evaluado

@@ -38,6 +38,67 @@ describe('vista Timeline 411 HTML', () => {
     expect(document.querySelector('[data-timeline411-view]')).toBeNull()
   })
 
+  it('pliega objetos y grupos conservando el estado anidado fuera del JSON', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    const documentBefore = timeline.stringify()
+    view.mount('#timeline-test')
+
+    const visibleLabels = () =>
+      [...document.querySelectorAll<HTMLElement>(
+        '.k411-timeline-tree-row__label',
+      )].map((label) => label.textContent)
+    const disclosure = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>(
+        '.k411-timeline-tree-row__disclosure',
+      )].find((button) => button.getAttribute('aria-label') === label)
+
+    expect(visibleLabels()).toEqual([
+      'Torus Knot',
+      'rotation',
+      'x',
+      'y',
+      'z',
+      'wireframe',
+    ])
+    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(6)
+    expect(
+      findPropertyRow('wireframe').querySelector(
+        '.k411-timeline-tree-row__disclosure',
+      ),
+    ).toBeNull()
+
+    disclosure('Colapsar grupo rotation')?.click()
+    expect(visibleLabels()).toEqual(['Torus Knot', 'rotation', 'wireframe'])
+    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(3)
+    expect(document.querySelectorAll('.k411-timeline-keyframe--aggregate')).toHaveLength(4)
+
+    disclosure('Colapsar objeto Torus Knot')?.click()
+    expect(visibleLabels()).toEqual(['Torus Knot'])
+    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(1)
+
+    disclosure('Desplegar objeto Torus Knot')?.click()
+    expect(visibleLabels()).toEqual(['Torus Knot', 'rotation', 'wireframe'])
+    expect(view.rowExpansion.collapsedRowIds).toEqual([
+      'Torus Knot:["rotation"]',
+    ])
+
+    disclosure('Desplegar grupo rotation')?.click()
+    expect(visibleLabels()).toEqual([
+      'Torus Knot',
+      'rotation',
+      'x',
+      'y',
+      'z',
+      'wireframe',
+    ])
+    expect(view.rowExpansion.collapsedRowIds).toEqual([])
+    expect(timeline.stringify()).toBe(documentBefore)
+
+    view.dispose()
+    timeline.dispose()
+  })
+
   it('muestra valores, bloquea interpolaciones y edita keyframes y estáticos', () => {
     const timeline = new Timeline411(projectState)
     const view = new Timeline411HtmlView(timeline, 'Animated scene')

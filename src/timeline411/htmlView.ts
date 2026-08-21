@@ -20,6 +20,12 @@ import {
 } from './projection'
 import type {TimelineRow, TimelineRowValueProjection} from './projection'
 import {
+  filterVisibleTimelineRows,
+  isTimelineRowCollapsible,
+  TimelineRowExpansionState,
+} from './rowExpansion'
+import type {TimelineRowExpansionSnapshot} from './rowExpansion'
+import {
   keyframeAddressKey,
   sameKeyframeAddress,
   TimelineKeyframeSelection,
@@ -80,6 +86,7 @@ export class Timeline411HtmlView {
   private keyframeContext?: HTMLElement
   private interpolationSelect?: HTMLSelectElement
   private resizeObserver?: ResizeObserver
+  private readonly rowExpansionState = new TimelineRowExpansionState()
   private readonly keyframeSelection = new TimelineKeyframeSelection()
   private activeGesture?: EditingGesture
   private cancelPointerInteraction?: () => void
@@ -99,6 +106,10 @@ export class Timeline411HtmlView {
 
   get selection(): TimelineKeyframeSelectionSnapshot {
     return this.keyframeSelection.snapshot
+  }
+
+  get rowExpansion(): TimelineRowExpansionSnapshot {
+    return this.rowExpansionState.snapshot
   }
 
   constructor(
@@ -432,7 +443,11 @@ export class Timeline411HtmlView {
     this.updateDurationInput()
     this.updateKeyframeTimeInput()
     this.updateInterpolationSelect()
-    const rows = buildTimelineRows(this.timeline.document, this.sheetId)
+    const allRows = buildTimelineRows(this.timeline.document, this.sheetId)
+    this.rowExpansionState.retain(
+      allRows.filter(isTimelineRowCollapsible).map(({id}) => id),
+    )
+    const rows = filterVisibleTimelineRows(allRows, this.rowExpansionState)
     this.currentRows = rows
     const viewport = this.viewport.snapshot
     const desiredScrollLeft = getViewportScrollLeft(viewport)
@@ -604,9 +619,11 @@ export class Timeline411HtmlView {
     element.style.paddingLeft = `${10 + row.depth * 16}px`
     element.dataset.rowId = row.id
 
-    const icon = document.createElement('span')
-    icon.className = 'k411-timeline-tree-row__icon'
-    icon.textContent = row.kind === 'object' ? '◆' : row.kind === 'group' ? '▾' : '·'
+    const icon = isTimelineRowCollapsible(row)
+      ? this.createRowDisclosure(row)
+      : document.createElement('span')
+    icon.classList.add('k411-timeline-tree-row__icon')
+    if (!isTimelineRowCollapsible(row)) icon.textContent = '·'
     const label = document.createElement('span')
     label.className = 'k411-timeline-tree-row__label'
     label.textContent = row.label
@@ -630,6 +647,35 @@ export class Timeline411HtmlView {
     this.treeRowElements.set(row.id, element)
     this.renderRowValue(valueCell, row, value)
     return element
+  }
+
+  private createRowDisclosure(row: TimelineRow): HTMLButtonElement {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'k411-timeline-tree-row__disclosure'
+    const collapsed = this.rowExpansionState.isCollapsed(row.id)
+    const rowType = row.kind === 'object' ? 'objeto' : 'grupo'
+    button.textContent = collapsed ? '▸' : '▾'
+    button.setAttribute('aria-expanded', String(!collapsed))
+    button.setAttribute(
+      'aria-label',
+      `${collapsed ? 'Desplegar' : 'Colapsar'} ${rowType} ${row.label}`,
+    )
+    button.title = collapsed
+      ? `Desplegar ${row.label}`
+      : `Colapsar ${row.label}`
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      this.rowExpansionState.toggle(row.id)
+      this.render()
+      this.treeRowElements
+        .get(row.id)
+        ?.querySelector<HTMLButtonElement>(
+          '.k411-timeline-tree-row__disclosure',
+        )
+        ?.focus({preventScroll: true})
+    })
+    return button
   }
 
   private updatePlayback(): void {

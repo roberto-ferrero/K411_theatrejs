@@ -151,6 +151,12 @@ se registra como una única operación de undo/redo. Si el lote elimina todas la
 claves de un track, el editor lo des-secuencia y conserva su valor estático. Con
 más de un keyframe, el bloque contextual se oculta.
 
+Los objetos y grupos compuestos del árbol se pueden plegar. El filtrado elimina
+también sus lanes descendientes, pero mantiene visible la fila padre con sus
+keyframes agregados. El estado anidado se conserva al cerrar y abrir un objeto,
+es independiente para cada vista y no modifica `animation.json`. El criterio es
+jerárquico y funciona con cualquier compound prop, no sólo con propiedades XYZ.
+
 Si un keyframe coincide con la línea vertical del playhead, el keyframe tiene
 prioridad de puntero. La vista HTML lo apila por encima de la línea, muestra
 cursor de mano y reserva `ew-resize` para el ruler y el handle superior del
@@ -1068,9 +1074,41 @@ interface Timeline411ViewState {
     readonly visibleRange: readonly [number, number]
     readonly mode: 'fit' | 'manual'
   }
-  // Futuro: paneles, filas plegadas, Focus Range y Graph Editor.
+  readonly collapsedRowIds?: readonly string[]
+  // Futuro: paneles, Focus Range y Graph Editor.
 }
 ```
+
+El estado de filas plegadas ya existe en memoria y está desacoplado del DOM:
+
+```ts
+interface TimelineRowExpansionSnapshot {
+  readonly collapsedRowIds: readonly string[]
+}
+
+class TimelineRowExpansionState {
+  readonly snapshot: TimelineRowExpansionSnapshot
+
+  isCollapsed(rowId: string): boolean
+  collapse(rowId: string): boolean
+  expand(rowId: string): boolean
+  toggle(rowId: string): boolean
+  retain(rowIds: Iterable<string>): boolean
+  clear(): boolean
+}
+
+filterVisibleTimelineRows(
+  rows: readonly TimelineRow[],
+  expansion: TimelineRowExpansionReader,
+): readonly TimelineRow[]
+
+const state = view.rowExpansion
+```
+
+`collapsedRowIds` utiliza los IDs estables derivados del objeto y del property
+path. Actualmente `view.rowExpansion` expone una copia del estado y la vista lo
+mantiene durante su vida; su escritura en `timeline411.editor.json` continúa
+pendiente.
 
 Persistencia recomendada:
 

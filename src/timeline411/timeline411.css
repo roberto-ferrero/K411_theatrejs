@@ -297,6 +297,30 @@
   text-align: center;
 }
 
+.k411-timeline-tree-row__disclosure {
+  height: 20px;
+  padding: 0;
+  color: var(--k411-blue);
+  border: 0;
+  border-radius: 3px;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  line-height: 20px;
+}
+
+.k411-timeline-tree-row__disclosure:hover,
+.k411-timeline-tree-row__disclosure:focus-visible {
+  color: #bde8ff;
+  background: rgb(98 184 235 / 12%);
+}
+
+.k411-timeline-tree-row__disclosure:focus-visible {
+  box-shadow: 0 0 0 1px rgb(98 184 235 / 55%);
+}
+
 .k411-timeline-tree-row__label {
   min-width: 0;
   overflow: hidden;
