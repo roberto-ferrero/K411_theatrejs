@@ -1,4 +1,4 @@
-import {afterEach, beforeEach, describe, expect, it} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import projectState from '../src/state.json'
 import {Timeline411HtmlView} from '../src/timeline411/htmlView'
 import {registerTimelineObjectPropertyCatalog} from '../src/timeline411/propertyCatalog'
@@ -18,6 +18,7 @@ describe('vista Timeline 411 HTML', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     document.body.replaceChildren()
   })
 
@@ -196,6 +197,26 @@ describe('vista Timeline 411 HTML', () => {
       document.querySelector('.k411-timeline-tree-row__disclosure'),
     ).not.toBeNull()
 
+    const removeButton = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Quitar propiedad Posición"]',
+    )
+    expect(removeButton).not.toBeNull()
+    expect(document.querySelectorAll('.k411-timeline-tree-row__property-remove')).toHaveLength(1)
+    expect(
+      findPropertyRow('x').querySelector('.k411-timeline-tree-row__property-remove'),
+    ).toBeNull()
+    removeButton?.click()
+    expect(
+      timeline.document.sheetsById.Scene.staticOverrides.byObject.Cube.position,
+    ).toBeUndefined()
+    expect(timeline.store.history.undoLabel).toBe('Quitar propiedad Posición')
+
+    expect(timeline.store.undo()).toBe(true)
+    expect(
+      timeline.document.sheetsById.Scene.staticOverrides.byObject.Cube.position,
+    ).toEqual({x: 1, y: 2, z: 3})
+    expect(findPropertyRow('Posición')).not.toBeNull()
+
     expect(timeline.store.undo()).toBe(true)
     expect(
       timeline.document.sheetsById.Scene.staticOverrides.byObject.Cube.position,
@@ -205,6 +226,87 @@ describe('vista Timeline 411 HTML', () => {
         '.k411-timeline-tree-row__label',
       )].map(({textContent}) => textContent),
     ).toEqual(['Cube'])
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('confirma la eliminación de properties con keyframes y limpia la selección', () => {
+    const timeline = createTimeline({id: 'remove-property'})
+    const composition = timeline.composition('Scene')
+    const object = composition.object('Cube', {
+      position: types.compound({x: 0, y: 0, z: 0}, {label: 'Posición'}),
+    })
+    const catalog = registerTimelineObjectPropertyCatalog(object, {
+      objectType: 'test.mesh',
+      properties: [{
+        path: ['position'],
+        category: 'Transformación',
+        read: () => ({x: 1, y: 2, z: 3}),
+      }],
+    })
+    catalog.activate('["position"]')
+    timeline.editor.transaction((transaction) => {
+      transaction.addKeyframeAt(object.props.position.x, {position: 0, value: 1})
+      transaction.addKeyframeAt(object.props.position.x, {position: 1, value: 5})
+    }, {label: 'Preparar position'})
+
+    const view = new Timeline411HtmlView(timeline, 'Scene')
+    view.mount('#timeline-test')
+    const keyframe = [...document.querySelectorAll<HTMLButtonElement>(
+      '.k411-timeline-keyframe',
+    )].find(({title}) => title === 'x: 0.000s')
+    keyframe?.click()
+    expect(view.selection.selections).toHaveLength(1)
+
+    const confirm = vi.spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    const removeButton = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Quitar propiedad Posición"]',
+    )
+    if (!removeButton) throw new Error('No se encontró el botón para quitar position')
+    const documentBeforeRemoval = timeline.stringify()
+    const historyBeforeRemoval = timeline.store.history.undoLabel
+
+    removeButton.click()
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('contiene keyframes'))
+    expect(timeline.stringify()).toBe(documentBeforeRemoval)
+    expect(timeline.store.history.undoLabel).toBe(historyBeforeRemoval)
+    expect(view.selection.selections).toHaveLength(1)
+
+    removeButton.click()
+    expect(timeline.store.history.undoLabel).toBe('Quitar propiedad Posición')
+    expect(view.selection.selections).toHaveLength(0)
+    expect(
+      timeline.document.sheetsById.Scene.staticOverrides.byObject.Cube.position,
+    ).toBeUndefined()
+    expect(
+      timeline.document.sheetsById.Scene.sequence?.tracksByObject.Cube
+        .trackIdByPropPath,
+    ).toEqual({})
+    expect(
+      [...document.querySelectorAll<HTMLElement>(
+        '.k411-timeline-tree-row__label',
+      )].map(({textContent}) => textContent),
+    ).toEqual(['Cube'])
+
+    document.querySelector<HTMLButtonElement>(
+      '.k411-timeline-tree-row__property-add',
+    )?.click()
+    expect(
+      [...document.querySelectorAll<HTMLOptionElement>(
+        '.k411-timeline-tree-row__property-picker option',
+      )].map(({textContent}) => textContent),
+    ).toEqual(['Seleccionar…', 'Posición'])
+
+    expect(timeline.store.undo()).toBe(true)
+    expect(findPropertyRow('Posición')).not.toBeNull()
+    expect(
+      document.querySelectorAll(
+        '.k411-timeline-keyframe:not(.k411-timeline-keyframe--aggregate)',
+      ),
+    ).toHaveLength(2)
 
     view.dispose()
     timeline.dispose()

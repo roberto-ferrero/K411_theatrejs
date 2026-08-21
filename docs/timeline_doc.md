@@ -275,6 +275,17 @@ lee su valor vigente, lo valida con el prop type y crea un static override dentr
 de una transacción reversible. Activar un compound como `position` añade juntas
 sus leaf props `x`, `y` y `z`.
 
+### Property Deactivation
+
+Operación inversa que convierte una active property en available property.
+Elimina sus static overrides, tracks y keyframes mediante una única transacción
+reversible. En un compound actúa sobre todas sus leaf props y nunca deja canales
+parcialmente activos.
+
+La API renderer-neutral `TimelineObjectPropertyCatalog.deactivate()` no muestra
+diálogos. Cada renderer decide cómo confirmar la pérdida de keyframes. Tras la
+operación, cualquier selección que referencie claves eliminadas debe depurarse.
+
 ### Host Value Reader
 
 Callback opcional `read()` de una entrada del catálogo. Obtiene el valor actual
@@ -1360,6 +1371,17 @@ cancelarlo. También se cierra con `Escape` o mediante un clic exterior. Cancela
 es una operación puramente visual y no afecta al documento, undo/redo, selección
 o playhead. El cierre con `×` o `Escape` devuelve el foco al botón; un clic
 exterior no roba el foco al nuevo destino.
+
+### Remove Property Button
+
+Botón `−` situado en la raíz de una active property catalogada. Las propiedades
+primitivas lo muestran en su propia fila y las compound únicamente en el grupo
+raíz, no en sus hojas. Si existen keyframes, la GUI HTML solicita confirmación
+antes de desactivar la property completa.
+
+La operación elimina overrides y tracks como una sola entrada de undo/redo,
+limpia las claves afectadas de la selección y devuelve la property al selector
+de `Add Property Button`.
 
 ### Property Value Cell
 

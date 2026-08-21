@@ -93,8 +93,7 @@ export class TimelineObjectPropertyCatalog {
   }
 
   activate(entryId: string): boolean {
-    const entry = this.registeredEntries.find(({id}) => id === entryId)
-    if (!entry) throw new Error(`Propiedad desconocida en el catálogo: ${entryId}`)
+    const entry = this.getRegisteredEntry(entryId)
     const timeline = this.object.composition.timeline
     if (isTimelinePropertyActive(timeline.document, entry.property)) return false
     const rawValue = entry.read ? entry.read() : entry.property.get()
@@ -110,6 +109,27 @@ export class TimelineObjectPropertyCatalog {
       {label: `Añadir propiedad ${entry.label}`},
     )
     return true
+  }
+
+  /** Retira overrides, tracks y keyframes de una property activa. */
+  deactivate(entryId: string): boolean {
+    const entry = this.getRegisteredEntry(entryId)
+    const timeline = this.object.composition.timeline
+    if (!isTimelinePropertyActive(timeline.document, entry.property)) return false
+    timeline.editor.transaction(
+      (transaction) => {
+        transaction.unsequence(entry.property)
+        transaction.unset(entry.property)
+      },
+      {label: `Quitar propiedad ${entry.label}`},
+    )
+    return true
+  }
+
+  private getRegisteredEntry(entryId: string): RegisteredEntry {
+    const entry = this.registeredEntries.find(({id}) => id === entryId)
+    if (!entry) throw new Error(`Propiedad desconocida en el catálogo: ${entryId}`)
+    return entry
   }
 }
 

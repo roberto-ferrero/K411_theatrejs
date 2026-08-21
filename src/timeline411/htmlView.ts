@@ -666,6 +666,9 @@ export class Timeline411HtmlView {
     } else if (row.kind === 'object') {
       this.appendPropertyCatalogControls(element, row)
     }
+    if (row.kind !== 'object') {
+      this.appendPropertyRemovalControl(element, row)
+    }
     this.treeRowElements.set(row.id, element)
     this.renderRowValue(valueCell, row, value)
     return element
@@ -753,6 +756,48 @@ export class Timeline411HtmlView {
       }
     })
     element.appendChild(addButton)
+  }
+
+  private appendPropertyRemovalControl(
+    element: HTMLElement,
+    row: TimelineRow,
+  ): void {
+    const catalog = this.getPropertyCatalog(row.objectKey)
+    const entry = catalog?.entries.find(({path}) => samePath(path, row.path))
+    if (!catalog || !entry) return
+
+    const removeButton = document.createElement('button')
+    removeButton.type = 'button'
+    removeButton.className = 'k411-timeline-tree-row__property-remove'
+    removeButton.textContent = '−'
+    removeButton.setAttribute('aria-label', `Quitar propiedad ${entry.label}`)
+    removeButton.title = `Quitar propiedad ${entry.label}`
+    removeButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const hasKeyframes = collectRowKeyframes(
+        this.timeline.document,
+        this.sheetId,
+        row,
+      ).length > 0
+      if (
+        hasKeyframes &&
+        !window.confirm(
+          `La propiedad "${entry.label}" contiene keyframes. ` +
+          '¿Quieres eliminarla junto con todos sus tracks?',
+        )
+      ) {
+        return
+      }
+
+      this.propertyPickerObjectKey = undefined
+      try {
+        catalog.deactivate(entry.id)
+      } catch (error) {
+        console.warn(error)
+        this.render()
+      }
+    })
+    element.appendChild(removeButton)
   }
 
   private createPropertyPicker(
@@ -1922,6 +1967,14 @@ function isPrimitivePropertyRow(row: TimelineRow): boolean {
     row.path.length > 0 &&
     (row.kind === 'track' || row.kind === 'static')
   )
+}
+
+function samePath(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return left.length === right.length &&
+    left.every((part, index) => part === right[index])
 }
 
 function getTrack(

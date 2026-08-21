@@ -169,6 +169,14 @@ modifica el documento, el historial, la selección o el playhead. El cierre por
 botón o teclado devuelve el foco al control; el clic exterior conserva el foco
 en el elemento elegido por el usuario.
 
+Cada property catalogada activa dispone de un botón `−`. Para una compound, el
+botón sólo aparece en su grupo raíz y elimina todas las hojas; no aparece en
+`x`, `y` o `z`. Las properties estáticas se retiran directamente. Si existen
+keyframes descendientes, HTML solicita confirmación antes de llamar a
+`catalog.deactivate()`. Al confirmar se limpian de la selección las claves
+eliminadas, la operación queda agrupada en una entrada de undo/redo y la property
+reaparece en el selector `+`.
+
 Cuando el número de layers supera el alto disponible, el área temporal ofrece
 el único scroll vertical y sincroniza su `scrollTop` con el árbol. La rueda puede
 usarse sobre cualquiera de los dos paneles. La toolbar, la cabecera del árbol y
@@ -617,6 +625,7 @@ class TimelineObjectPropertyCatalog {
   getAvailableEntries(document?: TimelineDocument):
     readonly TimelinePropertyCatalogEntry[]
   activate(entryId: string): boolean
+  deactivate(entryId: string): boolean
 }
 ```
 
@@ -647,6 +656,13 @@ registerTimelineObjectPropertyCatalog(torus, {
 `activate()` devuelve `false` si la property ya tiene un static override o algún
 track. En caso contrario sanitiza el valor leído y ejecuta una única transacción
 `Añadir propiedad …`. Para un compound, sus leaf props se escriben juntas.
+
+`deactivate()` devuelve `false` si la property ya está inactiva. En caso
+contrario des-secuencia todas sus leaf props y elimina sus static overrides en
+una única transacción `Quitar propiedad …`. Esto retira tracks y keyframes sin
+dejar datos parciales, participa en undo/redo y hace que la entrada vuelva a
+estar disponible. La confirmación destructiva pertenece a la GUI, no a esta API
+renderer-neutral.
 
 El registro valida IDs duplicados, paths duplicados y que cada path exista en el
 schema. Esto permite registrar catálogos diferentes para `three.mesh`,

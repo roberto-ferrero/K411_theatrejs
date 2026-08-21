@@ -352,6 +352,32 @@
   cursor: default;
 }
 
+.k411-timeline-tree-row__property-remove {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-right: 5px;
+  padding: 0;
+  color: #9ca6b5;
+  border: 0;
+  border-radius: 3px;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 18px;
+}
+
+.k411-timeline-tree-row__property-remove:hover,
+.k411-timeline-tree-row__property-remove:focus-visible {
+  color: #ff9d9d;
+  background: rgb(255 93 93 / 12%);
+}
+
+.k411-timeline-tree-row__property-remove:focus-visible {
+  box-shadow: 0 0 0 1px rgb(255 123 123 / 55%);
+}
+
 .k411-timeline-tree-row__property-picker {
   width: 126px;
   height: 22px;

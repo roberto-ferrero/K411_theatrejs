@@ -79,6 +79,50 @@ describe('catálogo renderer-neutral de propiedades', () => {
     timeline.dispose()
   })
 
+  it('desactiva una property completa con tracks y permite restaurarla', () => {
+    const {timeline, object, catalog} = createCatalogFixture()
+    expect(catalog.activate('["position"]')).toBe(true)
+    timeline.editor.transaction((transaction) => {
+      transaction.addKeyframeAt(object.props.position.x, {position: 0, value: 1})
+      transaction.addKeyframeAt(object.props.position.x, {position: 1, value: 8})
+      transaction.addKeyframeAt(object.props.position.y, {position: 0, value: 2})
+    }, {label: 'Preparar position'})
+
+    expect(catalog.deactivate('["position"]')).toBe(true)
+    expect(
+      timeline.document.sheetsById.Scene.staticOverrides.byObject.Cube.position,
+    ).toBeUndefined()
+    expect(
+      timeline.document.sheetsById.Scene.sequence?.tracksByObject.Cube
+        .trackIdByPropPath,
+    ).toEqual({})
+    expect(catalog.getAvailableEntries().map(({label}) => label)).toContain(
+      'Posición',
+    )
+    expect(timeline.store.history.undoLabel).toBe('Quitar propiedad Posición')
+    expect(catalog.deactivate('["position"]')).toBe(false)
+
+    expect(timeline.store.undo()).toBe(true)
+    expect(
+      timeline.document.sheetsById.Scene.staticOverrides.byObject.Cube.position,
+    ).toEqual({x: 4, y: 5, z: 6})
+    expect(
+      Object.keys(
+        timeline.document.sheetsById.Scene.sequence?.tracksByObject.Cube
+          .trackIdByPropPath ?? {},
+      ),
+    ).toEqual(['["position","x"]', '["position","y"]'])
+    expect(catalog.getAvailableEntries().map(({label}) => label)).not.toContain(
+      'Posición',
+    )
+
+    expect(timeline.store.redo()).toBe(true)
+    expect(catalog.getAvailableEntries().map(({label}) => label)).toContain(
+      'Posición',
+    )
+    timeline.dispose()
+  })
+
   it('rechaza paths ausentes y definiciones duplicadas', () => {
     const timeline = createTimeline({id: 'invalid-catalog'})
     const object = timeline.composition('Scene').object('Cube', {visible: true})

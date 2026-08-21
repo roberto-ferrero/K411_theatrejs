@@ -77,6 +77,16 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
     seleccionar mediante ese botón, `Escape` o un clic exterior. La cancelación
     no modifica documento, historial, selección ni playhead; `×` y `Escape`
     devuelven el foco al botón.
+14. Cada raíz catalogada activa muestra un botón `−`. En un compound aparece en
+    el grupo raíz y elimina juntas todas sus leaf props; no se replica en `x`,
+    `y`, `z` u otros descendientes.
+15. Una property sin keyframes se retira directamente. Si contiene keyframes, la
+    GUI solicita confirmación antes de eliminar sus tracks completos.
+16. `deactivate()` des-secuencia y elimina overrides dentro de una única
+    transacción. Undo/redo restaura o vuelve a retirar todo el estado.
+17. Al retirar una property se limpian los keyframes afectados de la selección y
+    la entrada vuelve a aparecer en el selector `+`. El resultado continúa siendo
+    un `ProjectState` compatible con Theatre.js 0.7.2.
 
 ### Decisiones de valores en las layers
 
@@ -355,6 +365,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
       sin efectos sobre el modelo ni el historial.
 - [x] Alta de layers simples o compuestas como static overrides mediante una
       única transacción reversible.
+- [x] Botón `−` para quitar properties simples o compuestas, con confirmación si
+      contienen keyframes, limpieza de selección y undo/redo.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -381,7 +393,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Evento `object:configuration` para refrescar vistas cuando cambia un
       catálogo o schema runtime.
 
-La suite actual contiene 56 pruebas. `npm test` y
+La suite actual contiene 58 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -427,7 +439,7 @@ La suite actual contiene 56 pruebas. `npm test` y
 - [x] Selector HTML agrupado por category y control accesible `+`.
 - [x] Integración inicial del catálogo del `Mesh` usado por `Torus Knot`.
 - [ ] Catálogos concretos para PerspectiveCamera, OrthographicCamera y luces.
-- [ ] Quitar una property activa y resolver el borrado de sus tracks.
+- [x] Quitar una property activa y resolver el borrado de sus tracks.
 - [ ] Materiales múltiples y properties dependientes del subtipo de material.
 
 ### Markers, estado visual y persistencia
