@@ -7,9 +7,9 @@ la interacción y la representación.
 
 > Estado: contrato parcialmente implementado. Las secciones marcadas como
 > objetivo describen la evolución prevista; el bloque siguiente enumera la API
-> que existe y está probada a fecha de 2026-08-20.
+> que existe y está probada a fecha de 2026-08-21.
 
-### Estado de implementación del MVP HTML (2026-08-20)
+### Estado de implementación del MVP HTML (2026-08-21)
 
 La API de objetos y tracks ya está disponible. La entrada canónica es
 `createTimeline()`; el constructor se conserva por compatibilidad:
@@ -141,6 +141,15 @@ vacía deselecciona el keyframe activo sin mover el playhead. El bloque
 contextual de `KF` se oculta y la vista emite `selection:change`. Los keyframes,
 el ruler, el playhead y los gestos de pan o drag quedan excluidos; el doble clic
 de creación continúa funcionando.
+
+La vista admite selección múltiple con `Ctrl/Cmd + clic`. Un clic simple
+reemplaza el grupo y el último keyframe añadido actúa como principal. Arrastrar
+cualquiera de los seleccionados mueve todo el grupo conservando sus offsets; el
+delta se limita al rango de la secuencia y al primer keyframe no seleccionado de
+cada track. `Delete` o `Backspace` eliminan el grupo. Cada movimiento o borrado
+se registra como una única operación de undo/redo. Si el lote elimina todas las
+claves de un track, el editor lo des-secuencia y conserva su valor estático. Con
+más de un keyframe, el bloque contextual se oculta.
 
 Si un keyframe coincide con la línea vertical del playhead, el keyframe tiene
 prioridad de puntero. La vista HTML lo apila por encima de la línea, muestra
@@ -845,7 +854,51 @@ Reglas:
 
 ## 12. Selección e historial
 
-### SelectionSnapshot
+### Selección de keyframes implementada
+
+El estado básico es renderer-neutral y se exporta desde el paquete. La vista
+HTML lo consume, pero no contiene referencias al DOM:
+
+```ts
+interface TimelineKeyframeSelectionSnapshot {
+  /** Alias compatible: keyframe principal. */
+  readonly selection?: KeyframeAddress
+  /** Grupo completo en orden de selección. */
+  readonly selections: readonly KeyframeAddress[]
+}
+
+class TimelineKeyframeSelection {
+  readonly size: number
+  readonly primary?: KeyframeAddress
+  readonly values: readonly KeyframeAddress[]
+  readonly snapshot: TimelineKeyframeSelectionSnapshot
+
+  has(address: KeyframeAddress): boolean
+  replace(address?: KeyframeAddress): boolean
+  toggle(address: KeyframeAddress): boolean
+  makePrimary(address: KeyframeAddress): boolean
+  retain(predicate: (address: KeyframeAddress) => boolean): boolean
+  clear(): boolean
+}
+```
+
+La vista expone una copia del estado vigente mediante `view.selection` y emite
+el mismo payload cuando cambia:
+
+```ts
+const current = view.selection
+
+view.on('selection:change', ({selection, selections}) => {
+  console.log('principal', selection)
+  console.log('grupo', selections)
+})
+```
+
+`selection` se conserva para consumidores escritos durante la fase de selección
+simple. `selections` es la fuente para operaciones de grupo. Ninguno de estos
+datos se serializa en `animation.json`.
+
+### SelectionSnapshot ampliado (objetivo)
 
 ```ts
 interface SelectionSnapshot {
@@ -1366,6 +1419,11 @@ interface HistoryChangeEvent extends EventEnvelope<'history:change'> {
   readonly redoLabel?: string
 }
 ```
+
+El sobre anterior es el objetivo ampliado para selecciones heterogéneas. El
+evento implementado actualmente para keyframes utiliza directamente
+`TimelineKeyframeSelectionSnapshot`: `selection` contiene el principal y
+`selections` el grupo completo. Aún no incluye `previous` ni un envelope común.
 
 ### Eventos de viewport e interacción
 

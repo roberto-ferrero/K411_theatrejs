@@ -461,7 +461,9 @@ playback para evitar búsquedas repetidas.
 Situación en la que dos keyframes del mismo track ocupan el mismo tiempo. La
 implementación debe decidir si reemplazarlos, fusionarlos o rechazar la operación.
 Timeline 411 rechaza la edición si otro keyframe del mismo track ocupa el frame
-de destino; no reemplaza ni elimina el keyframe existente.
+de destino; no reemplaza ni elimina el keyframe existente. Durante un movimiento
+múltiple, restringe el delta de todo el grupo y lo detiene un frame antes del
+primer keyframe no seleccionado, sin modificar sus offsets internos.
 
 ### Keyframe Toggle
 
@@ -502,7 +504,11 @@ documento persistente.
 ### Keyframe Group
 
 Conjunto de keyframes seleccionado y editado como una unidad. Puede abarcar
-varios tracks.
+varios tracks. Timeline 411 permite crearlo mediante `Ctrl/Cmd + clic`, moverlo
+arrastrando cualquiera de sus integrantes y eliminarlo con `Delete` o
+`Backspace`. El movimiento y el borrado generan una sola entrada de historial.
+Si el borrado vacía un track, Timeline 411 lo des-secuencia y conserva el valor
+evaluado como static override.
 
 ### Connected Right
 
@@ -1012,6 +1018,9 @@ confirmada.
 ### Selection
 
 Conjunto de entidades seleccionadas: objetos, tracks, keyframes o marcadores.
+En la fase actual de Timeline 411 contiene keyframes y vive en
+`TimelineKeyframeSelection`, un estado renderer-neutral que no forma parte del
+JSON de Theatre.js.
 
 ### Background Deselection
 
@@ -1027,12 +1036,27 @@ el doble clic de creación de keyframes.
 ### Primary Selection
 
 Elemento principal dentro de una selección múltiple. Puede actuar como referencia
-para alineación o edición relativa.
+para alineación o edición relativa. En Timeline 411 es el último keyframe
+seleccionado y recibe un resaltado adicional. El campo `selection` del evento
+`selection:change` lo conserva como alias compatible con la selección simple.
 
 ### Multi-selection
 
 Selección de varias entidades mediante modificadores de teclado, selección de
-rango o caja de selección.
+rango o caja de selección. Timeline 411 implementa actualmente `Ctrl + clic` en
+Windows/Linux y `Cmd + clic` en macOS para alternar keyframes. Un clic simple
+reemplaza el grupo. `Shift + clic`, range selection y marquee quedan pendientes.
+
+El evento `selection:change` incluye `selections`, la lista completa en orden de
+selección, y `selection`, su elemento principal. Cuando el grupo contiene más de
+un keyframe, el bloque contextual de tiempo e interpolación permanece oculto.
+
+### Group Translation
+
+Desplazamiento temporal común aplicado a todos los keyframes seleccionados. El
+delta se calcula respecto al keyframe arrastrado y conserva las distancias entre
+los integrantes. Timeline 411 lo limita contra `[0, duración]` y contra los
+keyframes no seleccionados de cada track; el grupo no se recorta ni se deforma.
 
 ### Selection Box / Marquee
 
@@ -1332,6 +1356,9 @@ efímero.
 ### Drag Threshold
 
 Movimiento mínimo necesario para diferenciar un click de un drag.
+Timeline 411 utiliza actualmente un umbral de dos píxeles para que un clic sin
+movimiento reduzca una selección múltiple al keyframe pulsado, mientras que un
+drag conserve y desplace el grupo completo.
 
 ### Pointer Capture
 

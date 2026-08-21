@@ -19,6 +19,12 @@ import {
   snapToFrame,
 } from './projection'
 import type {TimelineRow, TimelineRowValueProjection} from './projection'
+import {
+  keyframeAddressKey,
+  sameKeyframeAddress,
+  TimelineKeyframeSelection,
+} from './selection'
+import type {TimelineKeyframeSelectionSnapshot} from './selection'
 import {easingPresetPoints} from './store'
 import type {EditingGesture} from './store'
 import {Timeline411} from './timeline'
@@ -41,7 +47,7 @@ const minimumWidth = 640
 const minimumHeight = 240
 
 export interface Timeline411ViewEvents {
-  'selection:change': {selection?: KeyframeAddress}
+  'selection:change': TimelineKeyframeSelectionSnapshot
   'view:resize': {width: number; height: number}
   'viewport:change': {
     scrollLeft: number
@@ -51,6 +57,11 @@ export interface Timeline411ViewEvents {
     reason: TimelineViewportChangeReason
   }
   'panel:resize': {width: number}
+}
+
+interface KeyframeDragSnapshot {
+  readonly address: KeyframeAddress
+  readonly position: number
 }
 
 export class Timeline411HtmlView {
@@ -69,7 +80,7 @@ export class Timeline411HtmlView {
   private keyframeContext?: HTMLElement
   private interpolationSelect?: HTMLSelectElement
   private resizeObserver?: ResizeObserver
-  private selected?: KeyframeAddress
+  private readonly keyframeSelection = new TimelineKeyframeSelection()
   private activeGesture?: EditingGesture
   private cancelPointerInteraction?: () => void
   private treeWidth = 240
@@ -81,6 +92,14 @@ export class Timeline411HtmlView {
   private currentRows: readonly TimelineRow[] = []
   private readonly treeRowElements = new Map<string, HTMLElement>()
   private readonly unsubscribers: Array<() => void> = []
+
+  private get selected(): KeyframeAddress | undefined {
+    return this.keyframeSelection.primary
+  }
+
+  get selection(): TimelineKeyframeSelectionSnapshot {
+    return this.keyframeSelection.snapshot
+  }
 
   constructor(
     private readonly timeline: Timeline411,
@@ -352,6 +371,7 @@ export class Timeline411HtmlView {
     interpolation.addEventListener('change', () => {
       const preset = interpolation.value
       if (
+        this.keyframeSelection.size !== 1 ||
         !this.selected ||
         !isEasingPreset(preset)
       ) {
@@ -408,6 +428,7 @@ export class Timeline411HtmlView {
 
   private render(): void {
     if (!this.root || !this.treeRows || !this.timelineScroll || !this.surface) return
+    this.pruneInvalidKeyframeSelection()
     this.updateDurationInput()
     this.updateKeyframeTimeInput()
     this.updateInterpolationSelect()
@@ -531,8 +552,14 @@ export class Timeline411HtmlView {
         const button = document.createElement('button')
         button.type = 'button'
         button.className = 'k411-timeline-keyframe'
-        if (sameKeyframeAddress(this.selected, address)) {
+        if (this.keyframeSelection.has(address)) {
           button.classList.add('k411-timeline-keyframe--selected')
+          button.setAttribute('aria-pressed', 'true')
+        } else {
+          button.setAttribute('aria-pressed', 'false')
+        }
+        if (sameKeyframeAddress(this.selected, address)) {
+          button.classList.add('k411-timeline-keyframe--primary')
         }
         button.style.left = `${x}px`
         button.style.top = `${y + rowHeight / 2}px`
@@ -541,9 +568,12 @@ export class Timeline411HtmlView {
         button.addEventListener('pointerdown', (event) =>
           this.startKeyframeDrag(event, address),
         )
-        button.addEventListener('click', () => {
-          this.timeline.getPlayer(this.sheetId).seek(keyframe.position)
-          this.selectKeyframe(address)
+        button.addEventListener('click', (event) => {
+          const modifier = event.ctrlKey || event.metaKey
+          if (!modifier && event.detail !== 0) return
+          const current = findKeyframe(this.timeline.document, address)
+          if (current) this.timeline.getPlayer(this.sheetId).seek(current.position)
+          this.selectKeyframe(address, modifier ? 'toggle' : 'replace')
         })
         this.surface?.appendChild(button)
       }
@@ -670,12 +700,12 @@ export class Timeline411HtmlView {
 
   private updateKeyframeTimeInput(force = false): void {
     if (!this.keyframeTimeInput) return
-    const keyframe = this.selected
-      ? findKeyframe(this.timeline.document, this.selected)
+    const selected =
+      this.keyframeSelection.size === 1 ? this.selected : undefined
+    const keyframe = selected
+      ? findKeyframe(this.timeline.document, selected)
       : undefined
-    if (!this.selected || !keyframe) {
-      const hadSelection = Boolean(this.selected)
-      this.selected = undefined
+    if (!selected || !keyframe) {
       this.keyframeTimeEditDirty = false
       this.keyframeTimeInput.disabled = true
       this.keyframeTimeInput.value = ''
@@ -684,9 +714,6 @@ export class Timeline411HtmlView {
       if (this.keyframeContext) this.keyframeContext.hidden = true
       this.keyframeTimeInput.setCustomValidity('')
       if (this.interpolationSelect) this.interpolationSelect.disabled = true
-      if (hadSelection) {
-        this.events.emit('selection:change', {selection: undefined})
-      }
       return
     }
     if (this.keyframeContext) this.keyframeContext.hidden = false
@@ -705,7 +732,7 @@ export class Timeline411HtmlView {
 
   private updateInterpolationSelect(): void {
     if (!this.interpolationSelect) return
-    if (!this.selected) {
+    if (this.keyframeSelection.size !== 1 || !this.selected) {
       this.interpolationSelect.value = 'none'
       this.interpolationSelect.disabled = true
       return
@@ -716,7 +743,11 @@ export class Timeline411HtmlView {
   }
 
   private commitKeyframeTimeInput(): boolean {
-    if (!this.keyframeTimeInput || !this.selected) return false
+    if (
+      !this.keyframeTimeInput ||
+      this.keyframeSelection.size !== 1 ||
+      !this.selected
+    ) return false
     const input = this.keyframeTimeInput
     const keyframe = findKeyframe(this.timeline.document, this.selected)
     if (!keyframe) {
@@ -994,23 +1025,58 @@ export class Timeline411HtmlView {
     }
   }
 
-  private selectKeyframe(address?: KeyframeAddress): void {
-    this.selected = address
-    if (this.interpolationSelect) this.interpolationSelect.disabled = !address
-    this.events.emit('selection:change', {selection: address})
-    this.render()
+  private selectKeyframe(
+    address?: KeyframeAddress,
+    mode: 'replace' | 'toggle' = 'replace',
+    render = true,
+  ): void {
+    const changed = address && mode === 'toggle'
+      ? this.keyframeSelection.toggle(address)
+      : this.keyframeSelection.replace(address)
+    if (changed) this.emitKeyframeSelectionChange()
+    if (render) this.render()
+    else {
+      this.updateKeyframeTimeInput(true)
+      this.updateInterpolationSelect()
+    }
     this.root?.focus({preventScroll: true})
   }
 
+  private makeKeyframePrimary(address: KeyframeAddress): void {
+    if (!this.keyframeSelection.makePrimary(address)) return
+    this.emitKeyframeSelectionChange()
+    this.updateKeyframeTimeInput(true)
+    this.updateInterpolationSelect()
+  }
+
+  private pruneInvalidKeyframeSelection(): void {
+    if (
+      !this.keyframeSelection.retain((address) =>
+        Boolean(findKeyframe(this.timeline.document, address)),
+      )
+    ) return
+    this.emitKeyframeSelectionChange()
+  }
+
+  private emitKeyframeSelectionChange(): void {
+    this.events.emit('selection:change', this.keyframeSelection.snapshot)
+  }
+
   private clearKeyframeSelectionFromSurface(): void {
-    if (!this.selected) return
-    this.selected = undefined
+    if (!this.keyframeSelection.clear()) return
     if (this.interpolationSelect) this.interpolationSelect.disabled = true
     this.surface
-      ?.querySelector('.k411-timeline-keyframe--selected')
-      ?.classList.remove('k411-timeline-keyframe--selected')
+      ?.querySelectorAll('.k411-timeline-keyframe--selected, .k411-timeline-keyframe--primary')
+      .forEach((element) => {
+        element.classList.remove(
+          'k411-timeline-keyframe--selected',
+          'k411-timeline-keyframe--primary',
+        )
+        element.setAttribute('aria-pressed', 'false')
+      })
     this.updateKeyframeTimeInput(true)
-    this.events.emit('selection:change', {selection: undefined})
+    this.updateInterpolationSelect()
+    this.emitKeyframeSelectionChange()
     this.root?.focus({preventScroll: true})
   }
 
@@ -1061,28 +1127,64 @@ export class Timeline411HtmlView {
     event: PointerEvent,
     address: KeyframeAddress,
   ): void => {
-    if (this.spacePressed || event.button !== 0) return
+    if (
+      this.spacePressed ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey
+    ) return
     event.preventDefault()
     event.stopPropagation()
     const player = this.timeline.getPlayer(this.sheetId)
     player.pause()
-    const selectedKeyframe = getTrack(this.timeline.document, address).keyframes.find(
+    if (!this.keyframeSelection.has(address)) {
+      this.selectKeyframe(address, 'replace', false)
+    } else {
+      this.makeKeyframePrimary(address)
+    }
+    const draggedKeyframe = getTrack(this.timeline.document, address).keyframes.find(
       (keyframe) => keyframe.id === address.keyframeId,
     )
-    if (selectedKeyframe) player.seek(selectedKeyframe.position)
-    this.selected = address
-    this.interpolationSelect && (this.interpolationSelect.disabled = false)
-    this.events.emit('selection:change', {selection: address})
+    if (!draggedKeyframe) return
+    player.seek(draggedKeyframe.position)
+
+    const snapshots: KeyframeDragSnapshot[] = []
+    for (const selectedAddress of this.keyframeSelection.values) {
+      const keyframe = findKeyframe(this.timeline.document, selectedAddress)
+      if (keyframe) {
+        snapshots.push({address: selectedAddress, position: keyframe.position})
+      }
+    }
+    if (snapshots.length === 0) return
+
     this.cancelPointerInteraction?.()
-    const gesture = this.timeline.store.beginGesture('Mover keyframe')
+    const gesture = this.timeline.store.beginGesture(
+      snapshots.length === 1
+        ? 'Mover keyframe'
+        : `Mover ${snapshots.length} keyframes`,
+    )
     this.activeGesture = gesture
+    const startClientX = event.clientX
+    let moved = false
+    let lastDelta: number | undefined
 
     const move = (moveEvent: PointerEvent): void => {
-      const position = this.timeFromClientX(moveEvent.clientX, true)
+      if (Math.abs(moveEvent.clientX - startClientX) > 2) moved = true
+      const requestedPosition = this.timeFromClientX(moveEvent.clientX, true)
+      const delta = this.constrainKeyframeSelectionDelta(
+        snapshots,
+        requestedPosition - draggedKeyframe.position,
+      )
+      if (lastDelta === delta) return
+      lastDelta = delta
       gesture.update((transaction) => {
-        transaction.updateKeyframe(address, {position})
+        for (const snapshot of snapshots) {
+          transaction.updateKeyframe(snapshot.address, {
+            position: Number((snapshot.position + delta).toFixed(6)),
+          })
+        }
       })
-      player.seek(position)
+      player.seek(Number((draggedKeyframe.position + delta).toFixed(6)))
     }
     const finish = (): void => {
       window.removeEventListener('pointermove', move)
@@ -1093,6 +1195,7 @@ export class Timeline411HtmlView {
       }
       if (gesture.active) gesture.commit()
       if (this.activeGesture === gesture) this.activeGesture = undefined
+      if (!moved) this.selectKeyframe(address)
     }
     const cancel = (): void => {
       window.removeEventListener('pointermove', move)
@@ -1108,6 +1211,56 @@ export class Timeline411HtmlView {
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', finish, {once: true})
     window.addEventListener('pointercancel', cancel, {once: true})
+  }
+
+  private constrainKeyframeSelectionDelta(
+    snapshots: readonly KeyframeDragSnapshot[],
+    requestedDelta: number,
+  ): number {
+    if (snapshots.length === 0 || Math.abs(requestedDelta) < 1e-9) return 0
+    const duration = this.timeline.getDuration(this.sheetId)
+    const frameDuration = 1 / this.timeline.getFps(this.sheetId)
+    let minimumDelta = -Math.min(...snapshots.map(({position}) => position))
+    let maximumDelta =
+      duration - Math.max(...snapshots.map(({position}) => position))
+    const selectedKeys = new Set(
+      snapshots.map(({address}) => keyframeAddressKey(address)),
+    )
+
+    for (const snapshot of snapshots) {
+      const track = getTrack(this.timeline.document, snapshot.address)
+      for (const candidate of track.keyframes) {
+        const candidateAddress: KeyframeAddress = {
+          ...snapshot.address,
+          keyframeId: candidate.id,
+        }
+        if (selectedKeys.has(keyframeAddressKey(candidateAddress))) continue
+        if (candidate.position > snapshot.position && requestedDelta > 0) {
+          maximumDelta = Math.min(
+            maximumDelta,
+            Math.max(
+              0,
+              candidate.position - snapshot.position - frameDuration,
+            ),
+          )
+        } else if (
+          candidate.position < snapshot.position &&
+          requestedDelta < 0
+        ) {
+          minimumDelta = Math.max(
+            minimumDelta,
+            Math.min(
+              0,
+              candidate.position - snapshot.position + frameDuration,
+            ),
+          )
+        }
+      }
+    }
+
+    return Number(
+      Math.max(minimumDelta, Math.min(maximumDelta, requestedDelta)).toFixed(6),
+    )
   }
 
   private readonly startPlayheadDrag = (event: PointerEvent): void => {
@@ -1311,12 +1464,19 @@ export class Timeline411HtmlView {
       this.viewport.fitToSequence()
       return
     }
-    if ((event.key === 'Delete' || event.key === 'Backspace') && this.selected) {
+    if (
+      (event.key === 'Delete' || event.key === 'Backspace') &&
+      this.keyframeSelection.size > 0
+    ) {
       event.preventDefault()
-      const selected = this.selected
+      const selected = [...this.keyframeSelection.values]
       this.timeline.editor.transaction((transaction) => {
-        transaction.removeKeyframe(selected)
-      }, {label: 'Eliminar keyframe'})
+        for (const address of selected) transaction.removeKeyframe(address)
+      }, {
+        label: selected.length === 1
+          ? 'Eliminar keyframe'
+          : `Eliminar ${selected.length} keyframes`,
+      })
       this.selectKeyframe(undefined)
       return
     }
@@ -1524,18 +1684,6 @@ function resolveMountTarget(target: string | HTMLElement): HTMLElement {
   if (matches.length === 0) throw new Error(`No existe el selector: ${target}`)
   if (matches.length > 1) throw new Error(`El selector es ambiguo: ${target}`)
   return matches[0]
-}
-
-function sameKeyframeAddress(
-  left: KeyframeAddress | undefined,
-  right: KeyframeAddress,
-): boolean {
-  return (
-    left?.sheetId === right.sheetId &&
-    left.objectKey === right.objectKey &&
-    left.trackId === right.trackId &&
-    left.keyframeId === right.keyframeId
-  )
 }
 
 function isPrimitivePropertyRow(row: TimelineRow): boolean {

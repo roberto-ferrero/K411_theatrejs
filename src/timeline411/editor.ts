@@ -116,6 +116,7 @@ export class TimelineEditorTransaction {
   private readonly stagedUnsequenced = new Set<string>()
   private readonly stagedValues = new Map<string, SerializableValue>()
   private readonly stagedKeyframeIds = new Map<string, string>()
+  private readonly stagedRemovedKeyframes = new Set<string>()
 
   constructor(
     private readonly timeline: Timeline411,
@@ -414,11 +415,18 @@ export class TimelineEditorTransaction {
     const keyframe = track?.keyframes.find(
       (candidate) => candidate.id === address.keyframeId,
     )
-    if (!track || !keyframe) {
+    const addressKey = keyframeAddressKey(address)
+    if (!track || !keyframe || this.stagedRemovedKeyframes.has(addressKey)) {
       throw new Error(`Keyframe desconocido: ${address.keyframeId}`)
     }
-    if (track.keyframes.length > 1 || options.unsequenceIfEmpty === false) {
+    const remainingKeyframes = track.keyframes.filter(
+      (candidate) => !this.stagedRemovedKeyframes.has(
+        keyframeAddressKey({...address, keyframeId: candidate.id}),
+      ),
+    )
+    if (remainingKeyframes.length > 1 || options.unsequenceIfEmpty === false) {
       this.transaction.removeKeyframe(address)
+      this.stagedRemovedKeyframes.add(addressKey)
       return
     }
 
@@ -512,6 +520,15 @@ function propertyAddressKey(address: PropertyAddress): string {
 
 function keyframeKey(property: string, position: number): string {
   return `${property}@${position}`
+}
+
+function keyframeAddressKey(address: KeyframeAddress): string {
+  return JSON.stringify([
+    address.sheetId,
+    address.objectKey,
+    address.trackId,
+    address.keyframeId,
+  ])
 }
 
 function snapAndValidatePosition(

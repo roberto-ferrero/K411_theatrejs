@@ -530,8 +530,15 @@
 }
 
 .k411-timeline-keyframe--selected {
+  border-color: #d9f2ff;
+  box-shadow: 0 0 0 2px rgb(98 184 235 / 80%);
+}
+
+.k411-timeline-keyframe--primary {
   border-color: #fff;
-  box-shadow: 0 0 0 2px var(--k411-blue);
+  box-shadow:
+    0 0 0 2px var(--k411-blue),
+    0 0 0 4px rgb(98 184 235 / 28%);
 }
 
 .k411-timeline-keyframe--aggregate {

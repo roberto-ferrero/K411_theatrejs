@@ -1,6 +1,6 @@
 # Timeline 411: decisiones, funcionalidades y TODO
 
-Última actualización: 2026-08-20
+Última actualización: 2026-08-21
 
 ## Propósito
 
@@ -115,8 +115,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    con ningún preset. Es informativo y no ofrece edición manual de handles.
 7. En el último keyframe se muestra `Sin segmento` y el selector queda
    deshabilitado porque no existe un segmento saliente.
-8. La futura selección múltiple no mostrará este bloque hasta definir una
-   semántica específica.
+8. La selección múltiple no muestra este bloque; sólo la selección de un único
+   keyframe habilita la edición contextual de tiempo e interpolación.
 9. Todo segmento nuevo creado sin handles ni tipo explícitos utiliza `Linear`
    como interpolación predeterminada.
 10. Las curvas importadas se conservan intactas hasta que el usuario selecciona
@@ -151,6 +151,34 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    `selection:change`.
 6. La deselección no reconstruye la superficie, por lo que no interfiere con el
    doble clic utilizado para crear keyframes.
+
+### Decisiones de selección múltiple y movimiento conjunto
+
+1. Un clic sencillo reemplaza la selección y deja un único keyframe activo.
+2. `Ctrl + clic` en Windows/Linux y `Cmd + clic` en macOS añaden o quitan un
+   keyframe de la selección.
+3. El último keyframe seleccionado es el elemento principal y recibe un
+   resaltado adicional. El campo compatible `selection` continúa representando
+   este keyframe principal.
+4. La selección se mantiene en un estado renderer-neutral, separado de HTML,
+   mediante `TimelineKeyframeSelection`.
+5. Arrastrar cualquier keyframe seleccionado mueve el grupo completo y conserva
+   exactamente las distancias temporales entre sus integrantes.
+6. El delta común queda restringido por el inicio, el final y el primer keyframe
+   no seleccionado de cada track. Ante una colisión, el grupo se detiene un
+   frame antes y nunca se deforma.
+7. Un clic sin drag sobre un keyframe de una selección múltiple reduce la
+   selección únicamente a ese keyframe. Durante el drag se conserva el grupo.
+8. `Delete` y `Backspace` eliminan todos los keyframes seleccionados. Si el lote
+   vacía un track, éste se des-secuencia y conserva el valor evaluado como
+   static override.
+9. Un movimiento o borrado múltiple crea una sola entrada de undo/redo.
+10. El bloque contextual `KF seleccionado` queda oculto mientras haya más de un
+    keyframe seleccionado.
+11. `selection:change` mantiene `selection` como alias del principal y añade
+    `selections` con la lista completa en orden de selección.
+12. Marquee, `Shift + clic`, duplicación, portapapeles y escalado temporal se
+    posponen a tareas posteriores.
 
 ### Prioridad entre keyframe y playhead
 
@@ -200,7 +228,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 
 - [x] Toolbar, árbol de propiedades, ruler, grid, lanes y playhead.
 - [x] Diseño responsive y panel de tracks redimensionable.
-- [x] Selección individual.
+- [x] Selección individual y múltiple con keyframe principal.
 - [x] Drag de playhead y keyframes con snapping a frames.
 - [x] Alta por doble click y borrado con `Delete`.
 - [x] Exportación manual.
@@ -235,6 +263,13 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
       ambos coinciden, con cursor y drag diferenciados.
 - [x] Línea del playhead puramente visual y manipulación limitada al ruler y al
       handle superior.
+- [x] `Ctrl/Cmd + clic` para alternar keyframes y clic simple para reemplazar la
+      selección.
+- [x] Movimiento conjunto con distancias internas estables y límites por rango
+      o colisión de track.
+- [x] Borrado múltiple con `Delete`/`Backspace` y una sola entrada de historial.
+- [x] Evento `selection:change` compatible, con principal en `selection` y grupo
+      completo en `selections`.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -258,7 +293,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
 
-La suite actual contiene 42 pruebas. `npm test` y
+La suite actual contiene 47 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -281,9 +316,10 @@ La suite actual contiene 42 pruebas. `npm test` y
 
 ### Selección e interacción
 
-- [ ] Selección múltiple y elemento principal.
+- [x] Selección múltiple y elemento principal.
 - [ ] Marquee, selección de rango y keyframes agregados editables.
-- [ ] Movimiento conjunto, duplicación y nudge por frames.
+- [x] Movimiento conjunto conservando offsets, límites y colisiones.
+- [ ] Duplicación y nudge por frames.
 - [ ] Snapping a keyframes, playhead, markers y límites.
 - [ ] Menús contextuales y mapa completo de teclado.
 

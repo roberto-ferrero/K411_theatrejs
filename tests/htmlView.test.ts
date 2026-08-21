@@ -584,6 +584,178 @@ describe('vista Timeline 411 HTML', () => {
     timeline.dispose()
   })
 
+  it('selecciona, mueve y elimina varios keyframes como un solo grupo', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    const selectionEvents: Array<{primary?: string; ids: string[]}> = []
+    view.on('selection:change', ({selection, selections}) => {
+      selectionEvents.push({
+        primary: selection?.keyframeId,
+        ids: selections.map(({keyframeId}) => keyframeId),
+      })
+    })
+    view.mount('#timeline-test')
+    view.viewport.setMetrics(3, 30, 300)
+
+    const findKeyframeButton = (title: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>(
+        '.k411-timeline-keyframe',
+      )].find((button) => button.title === title)
+
+    findKeyframeButton('x: 3.000s')?.dispatchEvent(
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 300,
+      }),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointerup', {bubbles: true, button: 0, clientX: 300}),
+    )
+    expect(
+      document.querySelectorAll('.k411-timeline-keyframe--selected'),
+    ).toHaveLength(1)
+    findKeyframeButton('y: 3.000s')?.dispatchEvent(
+      new MouseEvent('click', {bubbles: true, ctrlKey: true}),
+    )
+    expect(
+      document.querySelectorAll('.k411-timeline-keyframe--selected'),
+    ).toHaveLength(2)
+    expect(
+      document.querySelectorAll('.k411-timeline-keyframe--primary'),
+    ).toHaveLength(1)
+    expect(selectionEvents.at(-1)).toEqual({
+      primary: 'V1i_Ve-dDz',
+      ids: ['6qCOzmWF9R', 'V1i_Ve-dDz'],
+    })
+    expect(
+      document.querySelector<HTMLElement>(
+        '.k411-timeline-toolbar__keyframe-context',
+      )?.hidden,
+    ).toBe(true)
+
+    findKeyframeButton('x: 3.000s')?.click()
+    expect(view.selection.selections).toHaveLength(1)
+    expect(view.selection.selection?.keyframeId).toBe('6qCOzmWF9R')
+    expect(
+      document.querySelector<HTMLElement>(
+        '.k411-timeline-toolbar__keyframe-context',
+      )?.hidden,
+    ).toBe(false)
+    findKeyframeButton('y: 3.000s')?.dispatchEvent(
+      new MouseEvent('click', {bubbles: true, ctrlKey: true}),
+    )
+
+    findKeyframeButton('x: 3.000s')?.dispatchEvent(
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 300,
+      }),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointermove', {bubbles: true, button: 0, clientX: 100}),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointerup', {bubbles: true, button: 0, clientX: 100}),
+    )
+
+    const tracks = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData
+    expect(
+      tracks?.Q9IUK1iBde.keyframes.find(({id}) => id === '6qCOzmWF9R')?.position,
+    ).toBe(1)
+    expect(
+      tracks?.rVM9fvISsC.keyframes.find(({id}) => id === 'V1i_Ve-dDz')?.position,
+    ).toBe(1)
+    expect(timeline.player.position).toBe(1)
+    expect(timeline.store.history.undoLabel).toBe('Mover 2 keyframes')
+
+    expect(timeline.store.undo()).toBe(true)
+    const restoredTracks = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData
+    expect(
+      restoredTracks?.Q9IUK1iBde.keyframes.find(({id}) => id === '6qCOzmWF9R')
+        ?.position,
+    ).toBe(3)
+    expect(
+      restoredTracks?.rVM9fvISsC.keyframes.find(({id}) => id === 'V1i_Ve-dDz')
+        ?.position,
+    ).toBe(3)
+
+    findKeyframeButton('x: 3.000s')?.dispatchEvent(
+      new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 300,
+      }),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointermove', {bubbles: true, button: 0, clientX: 0}),
+    )
+    window.dispatchEvent(
+      new MouseEvent('pointerup', {bubbles: true, button: 0, clientX: 0}),
+    )
+    const constrainedTracks = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData
+    expect(
+      constrainedTracks?.Q9IUK1iBde.keyframes.find(
+        ({id}) => id === '6qCOzmWF9R',
+      )?.position,
+    ).toBe(0.033333)
+    expect(
+      constrainedTracks?.rVM9fvISsC.keyframes.find(
+        ({id}) => id === 'V1i_Ve-dDz',
+      )?.position,
+    ).toBe(0.033333)
+    expect(timeline.store.undo()).toBe(true)
+
+    document
+      .querySelector<HTMLElement>('[data-timeline411-view]')
+      ?.dispatchEvent(
+        new KeyboardEvent('keydown', {key: 'Backspace', bubbles: true}),
+      )
+    expect(timeline.store.history.undoLabel).toBe('Eliminar 2 keyframes')
+    expect(
+      document.querySelectorAll('.k411-timeline-keyframe--selected'),
+    ).toHaveLength(0)
+    expect(selectionEvents.at(-1)).toEqual({primary: undefined, ids: []})
+    expect(timeline.store.undo()).toBe(true)
+    expect(
+      timeline.document.sheetsById['Animated scene'].sequence?.tracksByObject[
+        'Torus Knot'
+      ].trackData.Q9IUK1iBde.keyframes,
+    ).toHaveLength(2)
+    expect(
+      timeline.document.sheetsById['Animated scene'].sequence?.tracksByObject[
+        'Torus Knot'
+      ].trackData.rVM9fvISsC.keyframes,
+    ).toHaveLength(2)
+
+    findKeyframeButton('x: 0.000s')?.click()
+    findKeyframeButton('x: 3.000s')?.dispatchEvent(
+      new MouseEvent('click', {bubbles: true, ctrlKey: true}),
+    )
+    document
+      .querySelector<HTMLElement>('[data-timeline411-view]')
+      ?.dispatchEvent(
+        new KeyboardEvent('keydown', {key: 'Delete', bubbles: true}),
+      )
+    const objectTracks = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot']
+    expect(objectTracks?.trackIdByPropPath['["rotation","x"]']).toBeUndefined()
+    expect(objectTracks?.trackData.Q9IUK1iBde).toBeUndefined()
+    expect(
+      timeline.document.sheetsById['Animated scene'].staticOverrides.byObject[
+        'Torus Knot'
+      ].rotation,
+    ).toEqual(expect.objectContaining({x: expect.any(Number)}))
+    expect(timeline.store.undo()).toBe(true)
+
+    view.dispose()
+    timeline.dispose()
+  })
+
   it('permite manejar el playhead sólo desde el ruler y su handle superior', () => {
     const timeline = new Timeline411(projectState)
     const view = new Timeline411HtmlView(timeline, 'Animated scene')
