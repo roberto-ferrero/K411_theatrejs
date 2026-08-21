@@ -55,6 +55,41 @@ export class TimelineKeyframeSelection {
     return true
   }
 
+  replaceMany(addresses: readonly KeyframeAddress[]): boolean {
+    const next = uniqueAddresses(addresses)
+    const nextPrimary = next[next.length - 1]
+    if (
+      sameAddressList(this.addresses, next) &&
+      (!nextPrimary || sameKeyframeAddress(this.primaryAddress, nextPrimary))
+    ) {
+      return false
+    }
+    this.addresses = next
+    this.primaryAddress = nextPrimary
+    return true
+  }
+
+  addMany(addresses: readonly KeyframeAddress[]): boolean {
+    const additions = uniqueAddresses(addresses)
+    if (additions.length === 0) return false
+    const next = [...this.addresses]
+    for (const address of additions) {
+      if (!next.some((candidate) => sameKeyframeAddress(candidate, address))) {
+        next.push({...address})
+      }
+    }
+    const nextPrimary = additions[additions.length - 1]
+    if (
+      sameAddressList(this.addresses, next) &&
+      sameKeyframeAddress(this.primaryAddress, nextPrimary)
+    ) {
+      return false
+    }
+    this.addresses = next
+    this.primaryAddress = {...nextPrimary}
+    return true
+  }
+
   toggle(address: KeyframeAddress): boolean {
     const index = this.addresses.findIndex((candidate) =>
       sameKeyframeAddress(candidate, address),
@@ -131,4 +166,26 @@ export function sameKeyframeAddress(
     left.trackId === right.trackId &&
     left.keyframeId === right.keyframeId
   )
+}
+
+function uniqueAddresses(
+  addresses: readonly KeyframeAddress[],
+): KeyframeAddress[] {
+  const keys = new Set<string>()
+  const unique: KeyframeAddress[] = []
+  for (const address of addresses) {
+    const key = keyframeAddressKey(address)
+    if (keys.has(key)) continue
+    keys.add(key)
+    unique.push({...address})
+  }
+  return unique
+}
+
+function sameAddressList(
+  left: readonly KeyframeAddress[],
+  right: readonly KeyframeAddress[],
+): boolean {
+  return left.length === right.length &&
+    left.every((address, index) => sameKeyframeAddress(address, right[index]))
 }

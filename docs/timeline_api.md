@@ -151,6 +151,13 @@ se registra como una única operación de undo/redo. Si el lote elimina todas la
 claves de un track, el editor lo des-secuencia y conserva su valor estático. Con
 más de un keyframe, el bloque contextual se oculta.
 
+Arrastrar al menos `4 px` sobre el fondo del Dope Sheet crea un marquee. El drag
+simple reemplaza la selección y `Shift + drag` añade los keyframes encontrados.
+El hit testing recibe tiempo y coordenadas lógicas de fila, funciona en cualquier
+dirección y sólo devuelve claves de tracks reales, nunca rombos agregados. El
+gesto se cancela con `Escape` o `pointercancel`, no mueve el playhead ni modifica
+el documento y emite como máximo un `selection:change` al confirmar.
+
 Los objetos y grupos compuestos del árbol se pueden plegar. El filtrado elimina
 también sus lanes descendientes, pero mantiene visible la fila padre con sus
 keyframes agregados. El estado anidado se conserva al cerrar y abrir un objeto,
@@ -992,12 +999,36 @@ class TimelineKeyframeSelection {
 
   has(address: KeyframeAddress): boolean
   replace(address?: KeyframeAddress): boolean
+  replaceMany(addresses: readonly KeyframeAddress[]): boolean
+  addMany(addresses: readonly KeyframeAddress[]): boolean
   toggle(address: KeyframeAddress): boolean
   makePrimary(address: KeyframeAddress): boolean
   retain(predicate: (address: KeyframeAddress) => boolean): boolean
   clear(): boolean
 }
 ```
+
+El hit testing de marquee tampoco depende del DOM:
+
+```ts
+interface TimelineMarqueeBounds {
+  readonly timeStart: number
+  readonly timeEnd: number
+  readonly rowStart: number
+  readonly rowEnd: number
+}
+
+function collectKeyframesInMarquee(
+  document: TimelineDocument,
+  sheetId: string,
+  rows: readonly TimelineRow[],
+  bounds: TimelineMarqueeBounds,
+): readonly KeyframeAddress[]
+```
+
+`rowStart` y `rowEnd` son coordenadas lógicas: `0` representa el borde superior
+de la primera fila y el centro de la fila `n` está en `n + 0.5`. El renderer HTML
+convierte píxeles a estas unidades; WebGL podrá proporcionar la misma entrada.
 
 La vista expone una copia del estado vigente mediante `view.selection` y emite
 el mismo payload cuando cambia:

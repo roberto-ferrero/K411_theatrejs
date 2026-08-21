@@ -38,6 +38,22 @@ describe('selección renderer-neutral de keyframes', () => {
     })
   })
 
+  it('reemplaza o amplía lotes sin duplicar direcciones', () => {
+    const selection = new TimelineKeyframeSelection()
+    expect(selection.replaceMany([first, second, first])).toBe(true)
+    expect(selection.snapshot).toEqual({
+      selection: second,
+      selections: [first, second],
+    })
+    expect(selection.replaceMany([first, second])).toBe(false)
+    expect(selection.addMany([second, third])).toBe(true)
+    expect(selection.snapshot).toEqual({
+      selection: third,
+      selections: [first, second, third],
+    })
+    expect(selection.addMany([])).toBe(false)
+  })
+
   it('cambia el principal sin alterar el grupo', () => {
     const selection = new TimelineKeyframeSelection()
     selection.toggle(first)

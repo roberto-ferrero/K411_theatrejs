@@ -262,8 +262,19 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
     keyframe seleccionado.
 11. `selection:change` mantiene `selection` como alias del principal y añade
     `selections` con la lista completa en orden de selección.
-12. Marquee, `Shift + clic`, duplicación, portapapeles y escalado temporal se
-    posponen a tareas posteriores.
+12. Un drag de al menos `4 px` sobre el fondo crea un marquee. Un drag simple
+    reemplaza la selección y `Shift + drag` añade resultados al grupo vigente.
+13. `collectKeyframesInMarquee()` recibe límites de tiempo y coordenadas de fila
+    normalizadas. Es renderer-neutral y sólo devuelve keyframes de tracks reales;
+    omite los rombos agregados de objetos y grupos.
+14. El rectángulo funciona en cualquier dirección, usa el centro vertical de la
+    fila para el hit testing y mantiene como principal el último resultado.
+15. `Escape` o `pointercancel` cancelan el gesto sin cambiar la selección. Un
+    movimiento inferior al umbral conserva el comportamiento de clic y doble clic.
+16. Confirmar emite como máximo un `selection:change`; no mueve el playhead, no
+    crea historial y no modifica `animation.json`.
+17. `Shift + clic`, selección de rango, keyframes agregados editables,
+    duplicación, portapapeles y escalado temporal se posponen.
 
 ### Prioridad entre keyframe y playhead
 
@@ -314,6 +325,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Toolbar, árbol de propiedades, ruler, grid, lanes y playhead.
 - [x] Diseño responsive y panel de tracks redimensionable.
 - [x] Selección individual y múltiple con keyframe principal.
+- [x] Marquee de keyframes con reemplazo, suma mediante `Shift` y cancelación
+      con `Escape`.
 - [x] Drag de playhead y keyframes con snapping a frames.
 - [x] Alta por doble click y borrado con `Delete`.
 - [x] Exportación manual.
@@ -393,7 +406,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Evento `object:configuration` para refrescar vistas cuando cambia un
       catálogo o schema runtime.
 
-La suite actual contiene 58 pruebas. `npm test` y
+La suite actual contiene 62 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -418,7 +431,8 @@ La suite actual contiene 58 pruebas. `npm test` y
 ### Selección e interacción
 
 - [x] Selección múltiple y elemento principal.
-- [ ] Marquee, selección de rango y keyframes agregados editables.
+- [x] Marquee renderer-neutral sobre keyframes reales.
+- [ ] Selección de rango y keyframes agregados editables.
 - [x] Movimiento conjunto conservando offsets, límites y colisiones.
 - [ ] Duplicación y nudge por frames.
 - [ ] Snapping a keyframes, playhead, markers y límites.

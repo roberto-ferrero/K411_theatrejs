@@ -1096,7 +1096,8 @@ seleccionado y recibe un resaltado adicional. El campo `selection` del evento
 Selección de varias entidades mediante modificadores de teclado, selección de
 rango o caja de selección. Timeline 411 implementa actualmente `Ctrl + clic` en
 Windows/Linux y `Cmd + clic` en macOS para alternar keyframes. Un clic simple
-reemplaza el grupo. `Shift + clic`, range selection y marquee quedan pendientes.
+reemplaza el grupo. También implementa marquee con reemplazo y `Shift + drag`
+para añadir resultados. `Shift + clic` y range selection quedan pendientes.
 
 El evento `selection:change` incluye `selections`, la lista completa en orden de
 selección, y `selection`, su elemento principal. Cuando el grupo contiene más de
@@ -1112,7 +1113,18 @@ keyframes no seleccionados de cada track; el grupo no se recorta ni se deforma.
 ### Selection Box / Marquee
 
 Rectángulo utilizado para seleccionar elementos. Pertenece al estado efímero de
-la interfaz.
+la interfaz y desaparece al confirmar o cancelar el gesto.
+
+Timeline 411 lo inicia después de `4 px` de movimiento sobre el fondo del Dope
+Sheet. El drag simple reemplaza la selección y `Shift + drag` conserva el grupo
+anterior y añade coincidencias. `Escape` y `pointercancel` restauran el estado
+previo. El gesto no mueve el playhead ni modifica el documento.
+
+El renderer convierte el rectángulo a `TimelineMarqueeBounds`: dos tiempos y dos
+coordenadas lógicas de fila. `collectKeyframesInMarquee()` normaliza cualquier
+dirección de arrastre y comprueba el centro de cada fila. Sólo devuelve
+`KeyframeAddress` de tracks reales, nunca símbolos agregados de objeto o grupo.
+Esto permite reutilizar el mismo hit testing desde HTML o WebGL.
 
 ### Selection Anchor
 
@@ -1471,7 +1483,8 @@ efímero.
 Movimiento mínimo necesario para diferenciar un click de un drag.
 Timeline 411 utiliza actualmente un umbral de dos píxeles para que un clic sin
 movimiento reduzca una selección múltiple al keyframe pulsado, mientras que un
-drag conserve y desplace el grupo completo.
+drag conserve y desplace el grupo completo. El marquee utiliza `4 px` para no
+interferir con el clic de deselección ni con el doble clic de creación.
 
 ### Pointer Capture
 

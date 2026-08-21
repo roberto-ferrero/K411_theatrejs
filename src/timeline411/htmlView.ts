@@ -10,6 +10,7 @@ import type {
 } from './model'
 import type {TimelinePropertyRef} from './objectApi'
 import {isSerializableMap} from './paths'
+import {collectKeyframesInMarquee} from './marquee'
 import type {TimelinePropTypeConfig} from './propTypes'
 import {getTimelineObjectPropertyCatalog} from './propertyCatalog'
 import type {
@@ -75,6 +76,13 @@ interface KeyframeDragSnapshot {
   readonly position: number
 }
 
+interface MarqueePoint {
+  readonly surfaceX: number
+  readonly surfaceY: number
+  readonly time: number
+  readonly row: number
+}
+
 export class Timeline411HtmlView {
   readonly viewport: TimelineViewport
   private readonly events = new TypedEventEmitter<Timeline411ViewEvents>()
@@ -102,6 +110,9 @@ export class Timeline411HtmlView {
   private durationEditDirty = false
   private keyframeTimeEditDirty = false
   private propertyPickerObjectKey?: string
+  private marqueeElement?: HTMLElement
+  private suppressSurfaceClick = false
+  private suppressSurfaceClickTimer?: number
   private currentRows: readonly TimelineRow[] = []
   private readonly treeRowElements = new Map<string, HTMLElement>()
   private readonly unsubscribers: Array<() => void> = []
@@ -176,6 +187,10 @@ export class Timeline411HtmlView {
     this.root?.removeEventListener('keydown', this.onKeyDown)
     document.removeEventListener('click', this.onDocumentClick)
     window.removeEventListener('keyup', this.onKeyUp)
+    if (typeof this.suppressSurfaceClickTimer !== 'undefined') {
+      window.clearTimeout(this.suppressSurfaceClickTimer)
+      this.suppressSurfaceClickTimer = undefined
+    }
     this.root?.remove()
     this.root = undefined
   }
@@ -234,6 +249,7 @@ export class Timeline411HtmlView {
 
     const surface = document.createElement('div')
     surface.className = 'k411-timeline-surface'
+    surface.addEventListener('pointerdown', this.startMarqueeSelection)
     surface.addEventListener('click', this.onSurfaceClick)
     this.surface = surface
     timelineScroll.appendChild(surface)
@@ -1638,7 +1654,169 @@ export class Timeline411HtmlView {
     this.viewport.panBy(deltaTime)
   }
 
+  private readonly startMarqueeSelection = (event: PointerEvent): void => {
+    if (
+      event.button !== 0 ||
+      this.spacePressed ||
+      event.ctrlKey ||
+      event.metaKey ||
+      !this.surface
+    ) {
+      return
+    }
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (
+      target.closest(
+        '.k411-timeline-keyframe, .k411-timeline-playhead, .k411-timeline-playhead-handle, .k411-timeline-ruler',
+      )
+    ) {
+      return
+    }
+    const start = this.getMarqueePoint(event.clientX, event.clientY)
+    if (!start) return
+
+    this.cancelPointerInteraction?.()
+    const additive = event.shiftKey
+    const startClientX = event.clientX
+    const startClientY = event.clientY
+    let current = start
+    let moved = false
+
+    const move = (moveEvent: PointerEvent): void => {
+      if (
+        !moved &&
+        Math.hypot(
+          moveEvent.clientX - startClientX,
+          moveEvent.clientY - startClientY,
+        ) < 4
+      ) {
+        return
+      }
+      const point = this.getMarqueePoint(moveEvent.clientX, moveEvent.clientY)
+      if (!point) return
+      moveEvent.preventDefault()
+      moved = true
+      current = point
+      this.updateMarqueeVisual(start, current)
+    }
+    const cleanup = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', cancel)
+      this.marqueeElement?.remove()
+      this.marqueeElement = undefined
+      this.root?.classList.remove('k411-timeline-root--marquee')
+      if (this.cancelPointerInteraction === cancel) {
+        this.cancelPointerInteraction = undefined
+      }
+    }
+    const finish = (upEvent: PointerEvent): void => {
+      if (!moved) {
+        cleanup()
+        return
+      }
+      upEvent.preventDefault()
+      current = this.getMarqueePoint(upEvent.clientX, upEvent.clientY) ?? current
+      const matches = collectKeyframesInMarquee(
+        this.timeline.document,
+        this.sheetId,
+        this.currentRows,
+        {
+          timeStart: start.time,
+          timeEnd: current.time,
+          rowStart: start.row,
+          rowEnd: current.row,
+        },
+      )
+      const changed = additive
+        ? this.keyframeSelection.addMany(matches)
+        : this.keyframeSelection.replaceMany(matches)
+      cleanup()
+      this.suppressNextSurfaceClick()
+      if (changed) {
+        this.emitKeyframeSelectionChange()
+        this.render()
+      }
+      this.root?.focus({preventScroll: true})
+    }
+    const cancel = (): void => cleanup()
+    this.cancelPointerInteraction = cancel
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish, {once: true})
+    window.addEventListener('pointercancel', cancel, {once: true})
+  }
+
+  private getMarqueePoint(clientX: number, clientY: number): MarqueePoint | undefined {
+    if (!this.timelineScroll || this.currentRows.length === 0) return undefined
+    const rect = this.timelineScroll.getBoundingClientRect()
+    const snapshot = this.viewport.snapshot
+    const viewportX = clampNumber(clientX - rect.left, 0, snapshot.width)
+    const viewportHeight = Math.max(
+      rulerHeight,
+      this.timelineScroll.clientHeight || rect.height,
+    )
+    const viewportY = clampNumber(
+      clientY - rect.top,
+      rulerHeight,
+      viewportHeight,
+    )
+    const contentBottom = rulerHeight + this.currentRows.length * rowHeight
+    const surfaceY = Math.min(
+      contentBottom,
+      this.timelineScroll.scrollTop + viewportY,
+    )
+    return {
+      surfaceX: clampNumber(
+        this.timelineScroll.scrollLeft + viewportX,
+        0,
+        this.surfaceWidth,
+      ),
+      surfaceY,
+      time: viewportXToTime(viewportX, snapshot),
+      row: clampNumber(
+        (surfaceY - rulerHeight) / rowHeight,
+        0,
+        this.currentRows.length,
+      ),
+    }
+  }
+
+  private updateMarqueeVisual(start: MarqueePoint, current: MarqueePoint): void {
+    if (!this.surface) return
+    if (!this.marqueeElement) {
+      this.marqueeElement = document.createElement('span')
+      this.marqueeElement.className = 'k411-timeline-marquee'
+      this.marqueeElement.setAttribute('aria-hidden', 'true')
+      this.surface.appendChild(this.marqueeElement)
+      this.root?.classList.add('k411-timeline-root--marquee')
+    }
+    this.marqueeElement.style.left = `${Math.min(start.surfaceX, current.surfaceX)}px`
+    this.marqueeElement.style.top = `${Math.min(start.surfaceY, current.surfaceY)}px`
+    this.marqueeElement.style.width = `${Math.abs(current.surfaceX - start.surfaceX)}px`
+    this.marqueeElement.style.height = `${Math.abs(current.surfaceY - start.surfaceY)}px`
+  }
+
+  private suppressNextSurfaceClick(): void {
+    this.suppressSurfaceClick = true
+    if (typeof this.suppressSurfaceClickTimer !== 'undefined') {
+      window.clearTimeout(this.suppressSurfaceClickTimer)
+    }
+    this.suppressSurfaceClickTimer = window.setTimeout(() => {
+      this.suppressSurfaceClick = false
+      this.suppressSurfaceClickTimer = undefined
+    }, 0)
+  }
+
   private readonly onSurfaceClick = (event: MouseEvent): void => {
+    if (this.suppressSurfaceClick) {
+      this.suppressSurfaceClick = false
+      if (typeof this.suppressSurfaceClickTimer !== 'undefined') {
+        window.clearTimeout(this.suppressSurfaceClickTimer)
+        this.suppressSurfaceClickTimer = undefined
+      }
+      return
+    }
     if (event.button !== 0 || this.spacePressed || !this.selected) return
     const target = event.target
     if (!(target instanceof Element)) return
@@ -1943,6 +2121,10 @@ function normalizeWheelDelta(delta: number, event: WheelEvent): number {
     return delta * Math.max(1, (event.currentTarget as HTMLElement | null)?.clientWidth ?? 800)
   }
   return delta
+}
+
+function clampNumber(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value))
 }
 
 function createToolbarButton(label: string, title: string): HTMLButtonElement {

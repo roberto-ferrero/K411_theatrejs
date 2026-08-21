@@ -35,6 +35,12 @@
   user-select: none;
 }
 
+.k411-timeline-root--marquee,
+.k411-timeline-root--marquee * {
+  cursor: crosshair !important;
+  user-select: none;
+}
+
 .k411-timeline-root button,
 .k411-timeline-root input,
 .k411-timeline-root select {
@@ -644,6 +650,15 @@
   border-color: #8f9daf;
   background: #647184;
   cursor: default;
+}
+
+.k411-timeline-marquee {
+  position: absolute;
+  z-index: 12;
+  border: 1px solid rgb(98 184 235 / 90%);
+  background: rgb(98 184 235 / 14%);
+  box-shadow: 0 0 0 1px rgb(14 20 29 / 35%);
+  pointer-events: none;
 }
 
 .k411-timeline-playhead {

@@ -794,6 +794,119 @@ describe('vista Timeline 411 HTML', () => {
     timeline.dispose()
   })
 
+  it('selecciona keyframes mediante marquee y amplía el grupo con Shift', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    const selectionEvents: string[][] = []
+    view.on('selection:change', ({selections}) => {
+      selectionEvents.push(selections.map(({keyframeId}) => keyframeId))
+    })
+    view.mount('#timeline-test')
+
+    const scroll = document.querySelector<HTMLElement>('.k411-timeline-scroll')
+    const surface = document.querySelector<HTMLElement>('.k411-timeline-surface')
+    const root = document.querySelector<HTMLElement>('[data-timeline411-view]')
+    if (!scroll || !surface || !root) {
+      throw new Error('No se encontró la superficie para marquee')
+    }
+    Object.defineProperty(scroll, 'clientWidth', {configurable: true, value: 300})
+    Object.defineProperty(scroll, 'clientHeight', {configurable: true, value: 240})
+    scroll.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 300,
+      bottom: 240,
+      width: 300,
+      height: 240,
+      toJSON: () => ({}),
+    })
+    view.viewport.setMetrics(3, 30, 300)
+    timeline.player.seek(1.25)
+    const documentBefore = timeline.stringify()
+
+    surface.dispatchEvent(new MouseEvent('pointerdown', {
+      bubbles: true,
+      button: 0,
+      clientX: 0,
+      clientY: 90,
+    }))
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      bubbles: true,
+      button: 0,
+      clientX: 15,
+      clientY: 140,
+    }))
+    expect(document.querySelector('.k411-timeline-marquee')).not.toBeNull()
+    window.dispatchEvent(new MouseEvent('pointerup', {
+      bubbles: true,
+      button: 0,
+      clientX: 15,
+      clientY: 140,
+    }))
+    surface.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
+
+    expect(view.selection.selections.map(({keyframeId}) => keyframeId)).toEqual([
+      'CFjUByQoGL',
+      'IXaZv1WgwK',
+    ])
+    expect(view.selection.selection?.keyframeId).toBe('IXaZv1WgwK')
+    expect(selectionEvents).toHaveLength(1)
+
+    surface.dispatchEvent(new MouseEvent('pointerdown', {
+      bubbles: true,
+      button: 0,
+      shiftKey: true,
+      clientX: 0,
+      clientY: 145,
+    }))
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      bubbles: true,
+      button: 0,
+      clientX: 15,
+      clientY: 170,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup', {
+      bubbles: true,
+      button: 0,
+      clientX: 15,
+      clientY: 170,
+    }))
+    surface.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
+
+    expect(view.selection.selections.map(({keyframeId}) => keyframeId)).toEqual([
+      'CFjUByQoGL',
+      'IXaZv1WgwK',
+      'IQHb1DjSrE',
+    ])
+    expect(view.selection.selection?.keyframeId).toBe('IQHb1DjSrE')
+    expect(selectionEvents).toHaveLength(2)
+
+    surface.dispatchEvent(new MouseEvent('pointerdown', {
+      bubbles: true,
+      button: 0,
+      clientX: 285,
+      clientY: 90,
+    }))
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      bubbles: true,
+      button: 0,
+      clientX: 300,
+      clientY: 170,
+    }))
+    expect(document.querySelector('.k411-timeline-marquee')).not.toBeNull()
+    root.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true, key: 'Escape'}))
+    expect(document.querySelector('.k411-timeline-marquee')).toBeNull()
+    expect(view.selection.selections).toHaveLength(3)
+    expect(selectionEvents).toHaveLength(2)
+    expect(timeline.player.position).toBe(1.25)
+    expect(timeline.stringify()).toBe(documentBefore)
+
+    view.dispose()
+    timeline.dispose()
+  })
+
   it('organiza la toolbar y muestra el easing real sólo con un KF seleccionado', () => {
     const timeline = new Timeline411(projectState)
     const view = new Timeline411HtmlView(timeline, 'Animated scene')
