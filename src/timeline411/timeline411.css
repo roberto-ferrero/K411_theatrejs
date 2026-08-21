@@ -70,6 +70,41 @@
   white-space: nowrap;
 }
 
+.k411-timeline-toolbar__basic,
+.k411-timeline-toolbar__actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.k411-timeline-toolbar__keyframe-context {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  height: 30px;
+  min-width: 0;
+  padding: 0 7px;
+  border: 1px solid rgb(244 189 63 / 42%);
+  border-radius: 5px;
+  background: rgb(244 189 63 / 6%);
+  white-space: nowrap;
+}
+
+.k411-timeline-toolbar__keyframe-context[hidden] {
+  display: none;
+}
+
+.k411-timeline-toolbar__context-title {
+  color: #f8d77f;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.k411-timeline-toolbar__actions {
+  margin-left: auto;
+}
+
 .k411-timeline-toolbar__button,
 .k411-timeline-preset,
 .k411-timeline-time,
@@ -131,6 +166,14 @@
   white-space: nowrap;
 }
 
+.k411-timeline-interpolation {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--k411-muted);
+  white-space: nowrap;
+}
+
 .k411-timeline-duration-input {
   width: 66px;
   padding: 0 7px;
@@ -141,6 +184,11 @@
   width: 60px;
   padding: 0 6px;
   text-align: right;
+}
+
+.k411-timeline-toolbar__keyframe-context .k411-timeline-keyframe-time-input,
+.k411-timeline-toolbar__keyframe-context .k411-timeline-preset {
+  height: 22px;
 }
 
 .k411-timeline-keyframe-time-input:disabled {
@@ -168,7 +216,6 @@
 }
 
 .k411-timeline-toolbar__export {
-  margin-left: auto;
   color: #c8ecff;
 }
 

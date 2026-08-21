@@ -402,15 +402,41 @@ class TimelineTransactionImplementation implements TimelineTransaction {
     if (track.keyframes.some((candidate) => candidate.id === id)) {
       throw new Error(`Keyframe ID duplicado: ${id}`)
     }
-    track.keyframes.push({
+    const usesLinearDefaults =
+      !keyframe.handles &&
+      !keyframe.type &&
+      typeof keyframe.connectedRight === 'undefined'
+    const created: TheatreKeyframe = {
       id,
       position: keyframe.position,
       value: cloneValue(keyframe.value),
-      handles: keyframe.handles ? [...keyframe.handles] : [0.5, 1, 0.5, 0],
+      handles: keyframe.handles ? [...keyframe.handles] : [1, 1, 0, 0],
       connectedRight: keyframe.connectedRight ?? true,
-      type: keyframe.type,
-    })
+      type: keyframe.type ?? (usesLinearDefaults ? 'bezier' : undefined),
+    }
+    track.keyframes.push(created)
     sortKeyframes(track)
+    if (usesLinearDefaults) {
+      const index = track.keyframes.indexOf(created)
+      const previous = track.keyframes[index - 1]
+      const next = track.keyframes[index + 1]
+      if (previous) {
+        previous.type = 'bezier'
+        previous.connectedRight = true
+        previous.handles[2] = 0
+        previous.handles[3] = 0
+        created.handles[0] = 1
+        created.handles[1] = 1
+      }
+      if (next) {
+        created.type = 'bezier'
+        created.connectedRight = true
+        created.handles[2] = 0
+        created.handles[3] = 0
+        next.handles[0] = 1
+        next.handles[1] = 1
+      }
+    }
     return id
   }
 
@@ -480,7 +506,7 @@ class TimelineTransactionImplementation implements TimelineTransaction {
   }
 }
 
-const easingPresetPoints: Record<
+export const easingPresetPoints: Record<
   Exclude<EasingPreset, 'hold'>,
   [number, number, number, number]
 > = {

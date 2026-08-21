@@ -113,11 +113,18 @@ describe('API pública de objetos y tracks', () => {
 
     const second = timeline.editor.transaction((transaction) => {
       const created = transaction.addKeyframe(track, {position: 2, value: 10})
-      transaction.setInterpolation(first, 'linear')
       return created
     })
     expect(track.getKeyframe(second.id)).toBe(second)
+    expect(first.snapshot.handles.slice(2)).toEqual([0, 0])
+    expect(second.snapshot.handles.slice(0, 2)).toEqual([1, 1])
     expect(track.evaluate(1)).toBeCloseTo(5)
+
+    timeline.editor.transaction((transaction) => {
+      transaction.setInterpolation(first, 'easeInOut')
+    })
+    expect(first.snapshot.handles.slice(2)).toEqual([0.42, 0])
+    expect(second.snapshot.handles.slice(0, 2)).toEqual([0.58, 1])
 
     timeline.editor.transaction((transaction) => {
       transaction.updateKeyframe(second, {position: 3, value: 12})

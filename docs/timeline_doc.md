@@ -419,8 +419,22 @@ keyframe ni elimina la selección. Al confirmar, el tiempo se ajusta al frame m�
 cercano, se valida contra `[0, duración]` y se guarda mediante una transacción
 con undo/redo. El playhead se sincroniza después con el nuevo tiempo.
 
-Sin un keyframe seleccionado, el campo `KF` permanece vacío y deshabilitado. No
-se utiliza para mostrar el playhead, que mantiene un indicador independiente.
+Sin un keyframe seleccionado, el bloque contextual que contiene el campo `KF`
+queda oculto. No se utiliza para mostrar el playhead, que mantiene un indicador
+independiente dentro del bloque básico.
+
+### Selected Keyframe Context
+
+Bloque contextual enmarcado de la toolbar que sólo aparece cuando existe un
+único keyframe seleccionado. Contiene el tiempo editable y el easing del
+segmento saliente. El resto de la toolbar conserva por separado los controles
+básicos y las acciones globales.
+
+El easing se presenta como preset cuando sus handles coinciden, como
+`Curva importada` cuando el JSON contiene una curva sin preset y como
+`Sin segmento` para el último keyframe, donde el selector queda deshabilitado.
+Los segmentos nuevos son `Linear` por defecto. Una curva importada permanece
+intacta hasta que el usuario escoge explícitamente un preset que la sustituye.
 
 ### Keyframe Value
 

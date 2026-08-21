@@ -19,6 +19,7 @@ import {
   snapToFrame,
 } from './projection'
 import type {TimelineRow, TimelineRowValueProjection} from './projection'
+import {easingPresetPoints} from './store'
 import type {EditingGesture} from './store'
 import {Timeline411} from './timeline'
 import type {
@@ -65,6 +66,7 @@ export class Timeline411HtmlView {
   private timeInput?: HTMLInputElement
   private durationInput?: HTMLInputElement
   private keyframeTimeInput?: HTMLInputElement
+  private keyframeContext?: HTMLElement
   private interpolationSelect?: HTMLSelectElement
   private resizeObserver?: ResizeObserver
   private selected?: KeyframeAddress
@@ -204,6 +206,9 @@ export class Timeline411HtmlView {
     const toolbar = document.createElement('header')
     toolbar.className = 'k411-timeline-toolbar'
 
+    const basicBlock = document.createElement('div')
+    basicBlock.className = 'k411-timeline-toolbar__basic'
+
     const brand = document.createElement('strong')
     brand.className = 'k411-timeline-toolbar__brand'
     brand.textContent = 'Timeline 411'
@@ -266,11 +271,12 @@ export class Timeline411HtmlView {
     duration.append(durationSeparator, durationInput, durationSuffix)
     this.durationInput = durationInput
     this.updateDurationInput(true)
+    basicBlock.append(brand, playButton, timeInput, duration)
 
     const keyframeTime = document.createElement('label')
     keyframeTime.className = 'k411-timeline-keyframe-time'
     const keyframeTimeLabel = document.createElement('span')
-    keyframeTimeLabel.textContent = 'KF'
+    keyframeTimeLabel.textContent = 'Tiempo:'
     const keyframeTimeInput = document.createElement('input')
     keyframeTimeInput.className = 'k411-timeline-keyframe-time-input'
     keyframeTimeInput.type = 'number'
@@ -313,7 +319,6 @@ export class Timeline411HtmlView {
       keyframeTimeSuffix,
     )
     this.keyframeTimeInput = keyframeTimeInput
-    this.updateKeyframeTimeInput(true)
 
     const undoButton = createToolbarButton('↶', 'Deshacer')
     undoButton.addEventListener('click', () => this.timeline.store.undo())
@@ -327,7 +332,8 @@ export class Timeline411HtmlView {
     interpolation.className = 'k411-timeline-preset'
     interpolation.setAttribute('aria-label', 'Interpolación del segmento')
     const presets: Array<[string, string]> = [
-      ['', 'Interpolación'],
+      ['none', 'Sin segmento'],
+      ['imported', 'Curva importada'],
       ['linear', 'Linear'],
       ['hold', 'Hold'],
       ['ease', 'Ease'],
@@ -339,40 +345,64 @@ export class Timeline411HtmlView {
       const option = document.createElement('option')
       option.value = value
       option.textContent = label
+      if (value === 'none' || value === 'imported') option.disabled = true
       interpolation.appendChild(option)
     }
     interpolation.disabled = true
     interpolation.addEventListener('change', () => {
-      if (!this.selected || !interpolation.value) return
+      const preset = interpolation.value
+      if (
+        !this.selected ||
+        !isEasingPreset(preset)
+      ) {
+        this.updateInterpolationSelect()
+        return
+      }
       try {
-        this.timeline.store.transaction('Cambiar interpolación', (transaction) => {
-          transaction.setInterpolation(
-            this.selected as KeyframeAddress,
-            interpolation.value as EasingPreset,
-          )
-        })
+        const selected = this.selected
+        this.timeline.editor.transaction(
+          (transaction) => {
+            transaction.setInterpolation(selected, preset)
+          },
+          {label: 'Cambiar interpolación'},
+        )
       } catch (error) {
         console.warn(error)
       }
-      interpolation.value = ''
+      this.updateInterpolationSelect()
     })
     this.interpolationSelect = interpolation
+
+    const keyframeContext = document.createElement('section')
+    keyframeContext.className = 'k411-timeline-toolbar__keyframe-context'
+    keyframeContext.setAttribute('aria-label', 'Keyframe seleccionado')
+    keyframeContext.hidden = true
+    const keyframeContextTitle = document.createElement('strong')
+    keyframeContextTitle.className = 'k411-timeline-toolbar__context-title'
+    keyframeContextTitle.textContent = 'KF seleccionado:'
+    const interpolationLabel = document.createElement('label')
+    interpolationLabel.className = 'k411-timeline-interpolation'
+    const interpolationText = document.createElement('span')
+    interpolationText.textContent = 'Interpolación:'
+    interpolationLabel.append(interpolationText, interpolation)
+    keyframeContext.append(
+      keyframeContextTitle,
+      keyframeTime,
+      interpolationLabel,
+    )
+    this.keyframeContext = keyframeContext
+    this.updateKeyframeTimeInput(true)
+    this.updateInterpolationSelect()
 
     const exportButton = createToolbarButton('JSON', 'Exportar animation.json')
     exportButton.classList.add('k411-timeline-toolbar__export')
     exportButton.addEventListener('click', () => this.downloadJson())
 
-    toolbar.append(
-      brand,
-      playButton,
-      timeInput,
-      duration,
-      keyframeTime,
-      undoButton,
-      redoButton,
-      interpolation,
-      exportButton,
-    )
+    const actions = document.createElement('div')
+    actions.className = 'k411-timeline-toolbar__actions'
+    actions.append(undoButton, redoButton, exportButton)
+
+    toolbar.append(basicBlock, keyframeContext, actions)
     return toolbar
   }
 
@@ -380,6 +410,7 @@ export class Timeline411HtmlView {
     if (!this.root || !this.treeRows || !this.timelineScroll || !this.surface) return
     this.updateDurationInput()
     this.updateKeyframeTimeInput()
+    this.updateInterpolationSelect()
     const rows = buildTimelineRows(this.timeline.document, this.sheetId)
     this.currentRows = rows
     const viewport = this.viewport.snapshot
@@ -650,6 +681,7 @@ export class Timeline411HtmlView {
       this.keyframeTimeInput.value = ''
       this.keyframeTimeInput.title =
         'Selecciona un keyframe para editar su tiempo'
+      if (this.keyframeContext) this.keyframeContext.hidden = true
       this.keyframeTimeInput.setCustomValidity('')
       if (this.interpolationSelect) this.interpolationSelect.disabled = true
       if (hadSelection) {
@@ -657,6 +689,7 @@ export class Timeline411HtmlView {
       }
       return
     }
+    if (this.keyframeContext) this.keyframeContext.hidden = false
     this.keyframeTimeInput.disabled = false
     this.keyframeTimeInput.title = 'Editar tiempo del keyframe seleccionado'
     this.keyframeTimeInput.step = String(1 / this.timeline.getFps(this.sheetId))
@@ -668,6 +701,18 @@ export class Timeline411HtmlView {
       return
     }
     this.keyframeTimeInput.value = formatKeyframeTime(keyframe.position)
+  }
+
+  private updateInterpolationSelect(): void {
+    if (!this.interpolationSelect) return
+    if (!this.selected) {
+      this.interpolationSelect.value = 'none'
+      this.interpolationSelect.disabled = true
+      return
+    }
+    const easing = getKeyframeEasing(this.timeline.document, this.selected)
+    this.interpolationSelect.value = easing
+    this.interpolationSelect.disabled = easing === 'none'
   }
 
   private commitKeyframeTimeInput(): boolean {
@@ -1517,5 +1562,43 @@ function findKeyframe(document: TimelineDocument, address: KeyframeAddress) {
     address.objectKey
   ]?.trackData[address.trackId]?.keyframes.find(
     (keyframe) => keyframe.id === address.keyframeId,
+  )
+}
+
+type KeyframeEasingDisplay = EasingPreset | 'imported' | 'none'
+
+function getKeyframeEasing(
+  document: TimelineDocument,
+  address: KeyframeAddress,
+): KeyframeEasingDisplay {
+  const track = document.sheetsById[address.sheetId]?.sequence?.tracksByObject[
+    address.objectKey
+  ]?.trackData[address.trackId]
+  const index = track?.keyframes.findIndex(
+    (keyframe) => keyframe.id === address.keyframeId,
+  ) ?? -1
+  if (!track || index < 0 || index >= track.keyframes.length - 1) return 'none'
+
+  const left = track.keyframes[index]
+  const right = track.keyframes[index + 1]
+  if (!left.connectedRight || left.type === 'hold') return 'hold'
+  const points = [
+    left.handles[2],
+    left.handles[3],
+    right.handles[0],
+    right.handles[1],
+  ]
+  for (const [preset, expected] of Object.entries(easingPresetPoints)) {
+    if (points.every((point, pointIndex) => Math.abs(point - expected[pointIndex]) < 1e-6)) {
+      return preset as Exclude<EasingPreset, 'hold'>
+    }
+  }
+  return 'imported'
+}
+
+function isEasingPreset(value: string): value is EasingPreset {
+  return (
+    value === 'hold' ||
+    Object.prototype.hasOwnProperty.call(easingPresetPoints, value)
   )
 }

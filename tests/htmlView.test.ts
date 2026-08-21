@@ -431,10 +431,10 @@ describe('vista Timeline 411 HTML', () => {
 
     const keyframe = [...document.querySelectorAll<HTMLButtonElement>(
       '.k411-timeline-keyframe',
-    )].find((button) => button.title === 'x: 3.000s')
+    )].find((button) => button.title === 'x: 0.000s')
     if (!keyframe) throw new Error('No se encontró el keyframe de x')
     keyframe.click()
-    expect(timeline.player.position).toBe(3)
+    expect(timeline.player.position).toBe(0)
 
     const keyframeTime = document.querySelector<HTMLInputElement>(
       '.k411-timeline-keyframe-time-input',
@@ -453,7 +453,7 @@ describe('vista Timeline 411 HTML', () => {
     document
       .querySelector<HTMLElement>('.k411-timeline-lane--track')
       ?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
-    expect(timeline.player.position).toBe(3)
+    expect(timeline.player.position).toBe(0)
     expect(keyframeTime?.disabled).toBe(true)
     expect(keyframeTime?.value).toBe('')
     expect(interpolation?.disabled).toBe(true)
@@ -461,6 +461,79 @@ describe('vista Timeline 411 HTML', () => {
       document.querySelector('.k411-timeline-keyframe--selected'),
     ).toBeNull()
     expect(selections.at(-1)).toBeUndefined()
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('organiza la toolbar y muestra el easing real sólo con un KF seleccionado', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+
+    const toolbar = document.querySelector<HTMLElement>('.k411-timeline-toolbar')
+    const basic = toolbar?.querySelector<HTMLElement>(
+      '.k411-timeline-toolbar__basic',
+    )
+    const context = toolbar?.querySelector<HTMLElement>(
+      '.k411-timeline-toolbar__keyframe-context',
+    )
+    const actions = toolbar?.querySelector<HTMLElement>(
+      '.k411-timeline-toolbar__actions',
+    )
+    const interpolation = toolbar?.querySelector<HTMLSelectElement>(
+      '.k411-timeline-preset',
+    )
+    if (!toolbar || !basic || !context || !actions || !interpolation) {
+      throw new Error('No se encontraron los bloques de la toolbar')
+    }
+    expect([...toolbar.children]).toEqual([basic, context, actions])
+    expect(basic.textContent).toContain('Timeline 411')
+    expect(context.hidden).toBe(true)
+    expect(
+      [...actions.querySelectorAll<HTMLButtonElement>('button')].map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(['↶', '↷', 'JSON'])
+
+    const firstX = [...document.querySelectorAll<HTMLButtonElement>(
+      '.k411-timeline-keyframe',
+    )].find((button) => button.title === 'x: 0.000s')
+    if (!firstX) throw new Error('No se encontró el primer keyframe de x')
+    firstX.click()
+    expect(context.hidden).toBe(false)
+    expect(context.querySelector('.k411-timeline-toolbar__context-title')?.textContent)
+      .toBe('KF seleccionado:')
+    expect(
+      context.querySelector<HTMLInputElement>('.k411-timeline-keyframe-time-input')
+        ?.value,
+    ).toBe('0.000')
+    expect(interpolation.value).toBe('imported')
+    expect(interpolation.selectedOptions[0]?.textContent).toBe('Curva importada')
+    expect(interpolation.disabled).toBe(false)
+
+    interpolation.value = 'linear'
+    interpolation.dispatchEvent(new Event('change', {bubbles: true}))
+    expect(interpolation.value).toBe('linear')
+    const xTrack = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde
+    expect(xTrack?.keyframes[0].handles.slice(2)).toEqual([0, 0])
+    expect(xTrack?.keyframes[1].handles.slice(0, 2)).toEqual([1, 1])
+
+    const lastX = [...document.querySelectorAll<HTMLButtonElement>(
+      '.k411-timeline-keyframe',
+    )].find((button) => button.title === 'x: 3.000s')
+    if (!lastX) throw new Error('No se encontró el último keyframe de x')
+    lastX.click()
+    expect(context.hidden).toBe(false)
+    expect(interpolation.value).toBe('none')
+    expect(interpolation.selectedOptions[0]?.textContent).toBe('Sin segmento')
+    expect(interpolation.disabled).toBe(true)
+
+    document
+      .querySelector<HTMLElement>('.k411-timeline-lane--track')
+      ?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
+    expect(context.hidden).toBe(true)
 
     view.dispose()
     timeline.dispose()

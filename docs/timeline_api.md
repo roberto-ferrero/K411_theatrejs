@@ -110,15 +110,24 @@ que cero, confirma con `Enter` o blur y cancela con `Escape`. La modificación u
 tres decimales sin reducir la precisión guardada. Los keyframes posteriores a
 una reducción de duración no se eliminan.
 
-La toolbar incluye además un campo `KF` independiente de la posición del
-playhead. Se activa al seleccionar un keyframe y permite cambiar su tiempo con
-`Enter` o blur; `Escape` cancela. El valor se ajusta al frame más cercano, debe
-permanecer dentro de `[0, duración]` y no puede coincidir con otro keyframe del
-mismo track. Una edición válida usa `updateKeyframe()` dentro de una transacción
-reversible y mueve el playhead al nuevo tiempo. La selección y el campo `KF`
-siguen activos si el playhead se desplaza por separado. Si no hay un keyframe
-seleccionado, `KF` queda vacío y deshabilitado; la posición del playhead se
-muestra exclusivamente en su propio campo.
+La toolbar se divide en tres zonas. El bloque básico contiene nombre,
+Play/Pause, posición del playhead y duración. El grupo derecho contiene
+`Deshacer`, `Rehacer` y `JSON`. Entre ambos sólo aparece el bloque enmarcado
+`KF seleccionado` cuando existe exactamente un keyframe seleccionado.
+
+El bloque contextual permite cambiar el tiempo con `Enter` o blur; `Escape`
+cancela. El valor se ajusta al frame más cercano, debe permanecer dentro de
+`[0, duración]` y no puede coincidir con otro keyframe del mismo track. Una
+edición válida usa `updateKeyframe()` dentro de una transacción reversible y
+mueve el playhead al nuevo tiempo. Mover el playhead por separado no elimina la
+selección. Sin selección, el bloque contextual se oculta completamente.
+
+El selector contextual muestra siempre el easing saliente efectivo: `Linear`,
+`Hold`, `Ease`, `Ease In`, `Ease Out` o `Ease In Out`. Los segmentos nuevos usan
+`Linear` de forma predeterminada. Cuando unos handles importados no coinciden con
+un preset, muestra `Curva importada` como estado informativo; elegir un preset
+los reemplaza, pero mientras tanto el JSON se conserva intacto. Para el último
+keyframe muestra `Sin segmento` y queda deshabilitado.
 
 Cada fila de propiedad primitiva incluye un rombo `◇/◆` para añadir o quitar un
 keyframe en el playhead. El doble clic sobre la lane aplica la misma operación en
@@ -128,10 +137,10 @@ des-secuencia el track y conserva el valor evaluado como static override. Estas
 reglas se implementan en el editor y pueden reutilizarse desde HTML o WebGL.
 
 Un clic sencillo con el botón izquierdo sobre el fondo temporal o una lane
-vacía deselecciona el keyframe activo sin mover el playhead. El campo `KF` queda
-vacío y deshabilitado, el selector de interpolación se desactiva y la vista emite
-`selection:change`. Los keyframes, el ruler, el playhead y los gestos de pan o
-drag quedan excluidos; el doble clic de creación continúa funcionando.
+vacía deselecciona el keyframe activo sin mover el playhead. El bloque
+contextual de `KF` se oculta y la vista emite `selection:change`. Los keyframes,
+el ruler, el playhead y los gestos de pan o drag quedan excluidos; el doble clic
+de creación continúa funcionando.
 
 Si un keyframe coincide con la línea vertical del playhead, el keyframe tiene
 prioridad de puntero. La vista HTML lo apila por encima de la línea, muestra

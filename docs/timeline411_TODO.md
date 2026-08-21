@@ -82,8 +82,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 
 ### Decisiones de edición del tiempo del keyframe
 
-1. La toolbar dispone de un campo `KF` separado del campo de posición del
-   playhead.
+1. La toolbar dispone de un bloque contextual `KF seleccionado`, separado del
+   bloque básico y del campo de posición del playhead.
 2. El campo `KF` representa y modifica el tiempo del keyframe seleccionado; la
    selección permanece activa aunque se mueva el playhead.
 3. El tiempo introducido se ajusta automáticamente al frame más cercano según
@@ -95,9 +95,32 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 6. `Enter` y blur confirman; `Escape` restaura el tiempo vigente.
 7. La modificación usa `timeline.editor.transaction()`, participa en undo/redo
    y mueve el playhead al nuevo tiempo.
-8. El campo queda desactivado cuando no hay selección o el keyframe seleccionado
-   se elimina. En ese estado queda vacío y nunca replica la posición del
-   playhead.
+8. El bloque contextual desaparece cuando no hay selección o el keyframe
+   seleccionado se elimina. El tiempo del keyframe nunca replica la posición
+   del playhead.
+
+### Decisiones de organización de la toolbar
+
+1. El bloque básico contiene `Timeline 411`, Play/Pause, posición del playhead y
+   duración total, y permanece siempre visible.
+2. `Deshacer`, `Rehacer` y `JSON` forman un grupo de acciones alineado a la
+   derecha, en ese orden.
+3. Entre ambos aparece un bloque enmarcado sólo cuando existe exactamente un
+   keyframe seleccionado.
+4. El bloque contextual muestra `KF seleccionado`, su tiempo editable y la
+   interpolación del segmento saliente.
+5. El selector de interpolación muestra siempre el estado efectivo: un preset,
+   `Curva importada` o `Sin segmento`.
+6. `Curva importada` identifica handles procedentes del JSON que no coinciden
+   con ningún preset. Es informativo y no ofrece edición manual de handles.
+7. En el último keyframe se muestra `Sin segmento` y el selector queda
+   deshabilitado porque no existe un segmento saliente.
+8. La futura selección múltiple no mostrará este bloque hasta definir una
+   semántica específica.
+9. Todo segmento nuevo creado sin handles ni tipo explícitos utiliza `Linear`
+   como interpolación predeterminada.
+10. Las curvas importadas se conservan intactas hasta que el usuario selecciona
+    explícitamente un preset que las reemplaza.
 
 ### Decisiones de alta y baja desde una propiedad
 
@@ -124,8 +147,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 2. Deseleccionar no modifica la posición del playhead.
 3. Los keyframes, el ruler y el propio playhead no se consideran fondo.
 4. Los gestos de pan con espacio o botón central y los drags no deseleccionan.
-5. La operación limpia el resaltado, deshabilita el selector de interpolación,
-   vacía y deshabilita `KF`, y emite `selection:change`.
+5. La operación limpia el resaltado, oculta el bloque contextual de `KF` y emite
+   `selection:change`.
 6. La deselección no reconstruye la superficie, por lo que no interfiere con el
    doble clic utilizado para crear keyframes.
 
@@ -196,6 +219,12 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Editor de duración en toolbar con validación, cancelación y undo/redo.
 - [x] Editor `KF` del tiempo del keyframe seleccionado con snapping, validación
       de rango y colisiones, sincronización del playhead y undo/redo.
+- [x] Toolbar dividida en bloque básico, contexto de keyframe y acciones
+      `Deshacer`/`Rehacer`/`JSON` alineadas a la derecha.
+- [x] Easing efectivo siempre visible con presets, `Curva importada` y
+      `Sin segmento` para el último keyframe.
+- [x] `Linear` como easing predeterminado de segmentos nuevos, sin modificar
+      curvas importadas hasta una elección explícita.
 - [x] Rombo `◇/◆` por propiedad para añadir o quitar un keyframe en el playhead.
 - [x] Alta y baja mediante doble clic en lanes estáticas, secuenciadas o vacías.
 - [x] Creación automática del track y des-secuenciación al eliminar su último
@@ -229,7 +258,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
 
-La suite actual contiene 41 pruebas. `npm test` y
+La suite actual contiene 42 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
