@@ -4,9 +4,11 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build:dev": "tsc && vite build --mode development",
+    "build": "tsc && vite build --mode production",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview:dev": "vite preview --mode development",
+    "preview": "vite preview --mode production"
   },
   "license": "MIT",
   "dependencies": {
