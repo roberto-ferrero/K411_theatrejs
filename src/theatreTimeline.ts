@@ -17,17 +17,51 @@ export async function connectTheatreTimeline(
   const sheet = project.sheet('Animated scene')
 
   const torusKnotObject = sheet.object('Torus Knot', {
+    position: types.compound({
+      x: types.number(scene.torusKnot.position.x),
+      y: types.number(scene.torusKnot.position.y),
+      z: types.number(scene.torusKnot.position.z),
+    }),
     rotation: types.compound({
-      x: types.number(scene.torusKnot.rotation.x, {range: [-2, 2]}),
-      y: types.number(scene.torusKnot.rotation.y, {range: [-2, 2]}),
-      z: types.number(scene.torusKnot.rotation.z, {range: [-2, 2]}),
+      x: types.number(scene.torusKnot.rotation.x / Math.PI, {range: [-2, 2]}),
+      y: types.number(scene.torusKnot.rotation.y / Math.PI, {range: [-2, 2]}),
+      z: types.number(scene.torusKnot.rotation.z / Math.PI, {range: [-2, 2]}),
+    }),
+    scale: types.compound({
+      x: types.number(scene.torusKnot.scale.x),
+      y: types.number(scene.torusKnot.scale.y),
+      z: types.number(scene.torusKnot.scale.z),
+    }),
+    visible: scene.torusKnot.visible,
+    material: types.compound({
+      opacity: types.number(scene.material.opacity, {range: [0, 1]}),
     }),
     wireframe: scene.material.wireframe,
   })
 
   torusKnotObject.onValuesChange((values) => {
-    const {x, y, z} = values.rotation
-    scene.torusKnot.rotation.set(x * Math.PI, y * Math.PI, z * Math.PI)
+    scene.torusKnot.position.set(
+      values.position.x,
+      values.position.y,
+      values.position.z,
+    )
+    scene.torusKnot.rotation.set(
+      values.rotation.x * Math.PI,
+      values.rotation.y * Math.PI,
+      values.rotation.z * Math.PI,
+    )
+    scene.torusKnot.scale.set(
+      values.scale.x,
+      values.scale.y,
+      values.scale.z,
+    )
+    scene.torusKnot.visible = values.visible
+    const transparent = values.material.opacity < 1
+    if (scene.material.transparent !== transparent) {
+      scene.material.transparent = transparent
+      scene.material.needsUpdate = true
+    }
+    scene.material.opacity = values.material.opacity
     scene.material.wireframe = values.wireframe
   })
 

@@ -241,6 +241,46 @@ sobre varios canales.
 Contrato que declara las props disponibles, sus tipos, valores iniciales, rangos
 y reglas de interpolación.
 
+### Property Catalog
+
+Metadatos runtime que indican qué props del schema puede ofrecer la interfaz para
+añadirlas como layers. Cada entrada contiene un property path, label, category y
+opcionalmente una función para leer el valor actual del objeto anfitrión.
+
+El catálogo no sustituye al prop schema: sólo organiza y expone un subconjunto de
+sus referencias. Timeline 411 lo mantiene fuera de `animation.json` para que el
+núcleo no dependa de Three.js, DOM, cámaras o materiales concretos.
+
+### Object Type
+
+Identificador del tipo de objeto para el que se registra un catálogo. Ejemplos:
+`three.mesh` o `three.perspective-camera`. Permite que la aplicación anfitriona
+ofrezca distintas properties sin introducir `instanceof` ni imports de Three.js
+en el núcleo del timeline.
+
+### Available Property
+
+Prop declarada en el schema y catálogo que todavía no tiene static override ni
+track. Es candidata a aparecer en el selector abierto mediante el botón `+`.
+
+### Active Property
+
+Prop que ya forma parte del documento porque tiene un static override o está
+secuenciada. Deja de aparecer en el selector para impedir duplicados.
+
+### Property Activation
+
+Operación que convierte una available property en active property. Timeline 411
+lee su valor vigente, lo valida con el prop type y crea un static override dentro
+de una transacción reversible. Activar un compound como `position` añade juntas
+sus leaf props `x`, `y` y `z`.
+
+### Host Value Reader
+
+Callback opcional `read()` de una entrada del catálogo. Obtiene el valor actual
+de la mesh, cámara, material u otro objeto anfitrión justo cuando se activa la
+property. Es lógica runtime y nunca se serializa.
+
 ### Prop Type
 
 Tipo semántico de una prop: número, boolean, string, enum, vector, color, etc. El
@@ -1291,6 +1331,13 @@ sidecar `Timeline411EditorState`, nunca a `animation.json`.
 Botón `▾/▸` asociado a una fila con descendientes. Expone `aria-expanded` y
 alterna únicamente el estado visual de la vista. No modifica el playhead, el
 historial, los keyframes ni la selección vigente.
+
+### Add Property Button
+
+Botón `+` situado en la fila de un objeto con catálogo. Abre un selector nativo
+agrupado por category y sólo muestra available properties. La selección crea la
+layer correspondiente; no crea keyframes hasta que el usuario utilice el rombo
+de la propiedad.
 
 ### Property Value Cell
 

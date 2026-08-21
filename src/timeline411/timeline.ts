@@ -26,6 +26,7 @@ export interface Timeline411Events {
   'sequence:position': PlaybackState
   'sequence:play': PlaybackState
   'sequence:pause': PlaybackState
+  'object:configuration': {sheetId: string; objectKey?: string}
 }
 
 export interface Timeline411Options {
@@ -227,18 +228,19 @@ export class Timeline411 {
       throw new Error(`El objeto ${object.id} ya está registrado`)
     }
     this.objects.set(key, object)
-    this.notifyObjectConfigurationChanged(object.composition.id)
+    this.notifyObjectConfigurationChanged(object.composition.id, object.id)
   }
 
   unregisterObject(object: TimelineObject): void {
     const key = objectRegistrationKey(object.composition.id, object.id)
     if (this.objects.get(key) === object) this.objects.delete(key)
-    this.notifyObjectConfigurationChanged(object.composition.id)
+    this.notifyObjectConfigurationChanged(object.composition.id, object.id)
   }
 
-  notifyObjectConfigurationChanged(sheetId: string): void {
+  notifyObjectConfigurationChanged(sheetId: string, objectKey?: string): void {
     this.applyBindings(sheetId)
     this.emitEvaluation(sheetId)
+    this.events.emit('object:configuration', {sheetId, objectKey})
   }
 
   replaceDocument(document: TimelineDocument): void {

@@ -41,6 +41,37 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    `editor.forgetObject()` elimina overrides y tracks mediante una transacción
    reversible.
 
+### Decisiones del catálogo de propiedades
+
+1. El botón `+` aparece en la fila de un objeto que tenga un catálogo registrado
+   y abre un selector de propiedades todavía no activas.
+2. El núcleo no importa Three.js ni utiliza `instanceof Mesh`. La aplicación
+   anfitriona registra descriptores mediante
+   `registerTimelineObjectPropertyCatalog()`.
+3. El catálogo declara el tipo del objeto, category, label, property path y un
+   lector opcional del valor vigente en el objeto anfitrión.
+4. Propiedad disponible, propiedad activa y propiedad secuenciada son estados
+   diferentes. El selector sólo muestra las disponibles.
+5. Activar una propiedad crea un static override con el valor leído en ese
+   instante. Una compound prop como `position` activa sus hojas `x`, `y` y `z`
+   dentro de una única transacción.
+6. La operación participa en undo/redo. Un undo elimina las nuevas layers y
+   restaura el valor inicial del binding.
+7. El catálogo, sus categorías y los callbacks de lectura son metadatos runtime:
+   nunca se serializan en `animation.json`.
+8. Los static overrides resultantes sí pertenecen al `ProjectState` y mantienen
+   compatibilidad directa con Theatre.js 0.7.2, siempre que la aplicación declare
+   el mismo prop schema al cargarlo.
+9. El catálogo inicial de `Torus Knot` expone `position`, `rotation`, `scale`,
+   `visible`, `material.opacity` y `wireframe`. Las propiedades ya activas, como
+   `rotation` y `wireframe`, no aparecen duplicadas.
+10. `material.opacity` se presenta como `Opacidad (alpha)` y el binding sincroniza
+    también `material.transparent`.
+11. Timeline 411 y el modo Theatre.js declaran los mismos property paths para el
+    torus, por lo que el JSON no necesita adaptación.
+12. El contrato es reutilizable para cámaras, luces u otros hosts; sus catálogos
+    concretos se implementarán de forma incremental.
+
 ### Decisiones de valores en las layers
 
 1. Toda propiedad primitiva muestra su valor evaluado a la derecha de la layer.
@@ -292,6 +323,10 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
       completo en `selections`.
 - [x] Árbol plegable para objetos y grupos compuestos, con lanes filtradas y
       estado anidado independiente por vista.
+- [x] Botón `+` y selector agrupado para activar properties desde la fila del
+      objeto, sin duplicar las que ya están en el timeline.
+- [x] Alta de layers simples o compuestas como static overrides mediante una
+      única transacción reversible.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -314,8 +349,11 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Tests de contrato de la nueva API y de los tipos de propiedades.
 - [x] Prueba de un documento creado desde cero con Timeline 411 y cargado sin
       adaptador en Theatre.js 0.7.2.
+- [x] Catálogo renderer-neutral de propiedades disponibles por tipo de objeto.
+- [x] Evento `object:configuration` para refrescar vistas cuando cambia un
+      catálogo o schema runtime.
 
-La suite actual contiene 51 pruebas. `npm test` y
+La suite actual contiene 55 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -353,6 +391,15 @@ La suite actual contiene 51 pruebas. `npm test` y
 - [ ] Graph Editor redimensionable.
 - [ ] Curvas escalares y representación de valores no escalares.
 - [ ] Selección sincronizada entre Dope Sheet y Graph Editor.
+
+### Catálogos de propiedades y objetos anfitriones
+
+- [x] Contrato genérico de catálogo, lectura del host y activación de properties.
+- [x] Selector HTML agrupado por category y control accesible `+`.
+- [x] Integración inicial del catálogo del `Mesh` usado por `Torus Knot`.
+- [ ] Catálogos concretos para PerspectiveCamera, OrthographicCamera y luces.
+- [ ] Quitar una property activa y resolver el borrado de sus tracks.
+- [ ] Materiales múltiples y properties dependientes del subtipo de material.
 
 ### Markers, estado visual y persistencia
 

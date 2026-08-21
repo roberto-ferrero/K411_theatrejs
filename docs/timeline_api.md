@@ -157,6 +157,12 @@ keyframes agregados. El estado anidado se conserva al cerrar y abrir un objeto,
 es independiente para cada vista y no modifica `animation.json`. El criterio es
 jerárquico y funciona con cualquier compound prop, no sólo con propiedades XYZ.
 
+La fila de un objeto con catálogo dispone de un botón `+`. Al abrirlo muestra
+únicamente properties disponibles y las agrupa por category. Elegir una crea el
+static override con el valor actual del objeto anfitrión; una compound prop crea
+todas sus hojas en una sola transacción. El catálogo es runtime y no se exporta,
+pero los valores activados sí usan el modelo normal de Theatre.js.
+
 Si un keyframe coincide con la línea vertical del playhead, el keyframe tiene
 prioridad de puntero. La vista HTML lo apila por encima de la línea, muestra
 cursor de mano y reserva `ew-resize` para el ruler y el handle superior del
@@ -169,6 +175,7 @@ Eventos del núcleo implementados:
 - `document:change` y `document:preview`.
 - `history:change`.
 - `sequence:position`, `sequence:play` y `sequence:pause`.
+- `object:configuration`.
 
 Eventos propios de cada vista implementados:
 
@@ -561,6 +568,81 @@ const unbind = torus.bind({
 ```
 
 El binding no forma parte del documento serializable.
+
+### Catálogo de propiedades disponibles
+
+El prop schema declara todo lo que el objeto puede evaluar. El catálogo define
+qué properties puede ofrecer la GUI para añadirlas como layers:
+
+```ts
+interface TimelinePropertyCatalogDefinition {
+  readonly id?: string
+  readonly path: readonly string[]
+  readonly label?: string
+  readonly category?: string
+  readonly read?: () => unknown
+}
+
+interface TimelineObjectPropertyCatalogConfig {
+  readonly objectType: string
+  readonly properties: readonly TimelinePropertyCatalogDefinition[]
+}
+
+interface TimelinePropertyCatalogEntry {
+  readonly id: string
+  readonly path: readonly string[]
+  readonly label: string
+  readonly category: string
+  readonly property: PropertyRef<unknown>
+}
+
+class TimelineObjectPropertyCatalog {
+  readonly object: TimelineObject
+  readonly objectType: string
+  readonly entries: readonly TimelinePropertyCatalogEntry[]
+
+  getAvailableEntries(document?: TimelineDocument):
+    readonly TimelinePropertyCatalogEntry[]
+  activate(entryId: string): boolean
+}
+```
+
+Registro para un `Mesh` de Three.js:
+
+```ts
+registerTimelineObjectPropertyCatalog(torus, {
+  objectType: 'three.mesh',
+  properties: [
+    {
+      path: ['position'],
+      label: 'Posición',
+      category: 'Transformación',
+      read: () => ({x: mesh.position.x, y: mesh.position.y, z: mesh.position.z}),
+    },
+    {path: ['scale'], label: 'Escala', category: 'Transformación'},
+    {path: ['visible'], label: 'Visible', category: 'Objeto'},
+    {
+      path: ['material', 'opacity'],
+      label: 'Opacidad (alpha)',
+      category: 'Material',
+      read: () => material.opacity,
+    },
+  ],
+})
+```
+
+`activate()` devuelve `false` si la property ya tiene un static override o algún
+track. En caso contrario sanitiza el valor leído y ejecuta una única transacción
+`Añadir propiedad …`. Para un compound, sus leaf props se escriben juntas.
+
+El registro valida IDs duplicados, paths duplicados y que cada path exista en el
+schema. Esto permite registrar catálogos diferentes para `three.mesh`,
+`three.perspective-camera`, luces, DOM u otros tipos sin que el núcleo dependa de
+esas librerías.
+
+El catálogo y `read()` nunca entran en `animation.json`. El static override
+resultante sí se serializa. Theatre.js lo carga directamente siempre que la
+aplicación declare el mismo path mediante `sheet.object()`.
 
 ## 8. Sequence y playback
 
@@ -1233,6 +1315,7 @@ interface TimelineEventMap {
   'composition:remove': CompositionEvent
   'object:add': ObjectEvent
   'object:remove': ObjectEvent
+  'object:configuration': ObjectConfigurationEvent
   'object:valuesChange': ObjectValuesChangeEvent
   'track:add': TrackEvent
   'track:update': TrackEvent
@@ -1345,6 +1428,7 @@ interface DocumentPreviewEvent extends EventEnvelope<'document:preview'> {
 | `composition:remove` | ID y snapshot anterior. |
 | `object:add` | Composition ID, object ID y schema. |
 | `object:remove` | Composition ID y object ID. |
+| `object:configuration` | Sheet ID y object key cuyo schema o catálogo runtime cambió. |
 | `track:add` | Track snapshot. |
 | `track:update` | Snapshot anterior y posterior. |
 | `track:remove` | Track snapshot eliminado. |
@@ -1361,6 +1445,11 @@ interface KeyframeEvent extends EventEnvelope<
   readonly keyframeId: string
   readonly before?: KeyframeSnapshot
   readonly after?: KeyframeSnapshot
+}
+
+interface ObjectConfigurationEvent {
+  readonly sheetId: string
+  readonly objectKey?: string
 }
 ```
 

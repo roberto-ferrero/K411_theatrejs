@@ -11,6 +11,11 @@ import type {
 import type {TimelinePropertyRef} from './objectApi'
 import {isSerializableMap} from './paths'
 import type {TimelinePropTypeConfig} from './propTypes'
+import {getTimelineObjectPropertyCatalog} from './propertyCatalog'
+import type {
+  TimelineObjectPropertyCatalog,
+  TimelinePropertyCatalogEntry,
+} from './propertyCatalog'
 import {
   buildTimelineRows,
   collectRowKeyframes,
@@ -96,6 +101,7 @@ export class Timeline411HtmlView {
   private lastScrollTop = 0
   private durationEditDirty = false
   private keyframeTimeEditDirty = false
+  private propertyPickerObjectKey?: string
   private currentRows: readonly TimelineRow[] = []
   private readonly treeRowElements = new Map<string, HTMLElement>()
   private readonly unsubscribers: Array<() => void> = []
@@ -149,6 +155,9 @@ export class Timeline411HtmlView {
         .getPlayer(this.sheetId)
         .subscribe(() => this.updatePlayback(), false),
       this.timeline.on('history:change', () => this.updateHistory()),
+      this.timeline.on('object:configuration', ({sheetId}) => {
+        if (sheetId === this.sheetId) this.render()
+      }),
       this.viewport.onChange(this.onViewportChange),
     )
     this.root.addEventListener('keydown', this.onKeyDown)
@@ -578,7 +587,7 @@ export class Timeline411HtmlView {
         }
         button.style.left = `${x}px`
         button.style.top = `${y + rowHeight / 2}px`
-        button.title = `${row.label}: ${keyframe.position.toFixed(3)}s`
+        button.title = `${this.getRowDisplayLabel(row)}: ${keyframe.position.toFixed(3)}s`
         button.setAttribute('aria-label', button.title)
         button.addEventListener('pointerdown', (event) =>
           this.startKeyframeDrag(event, address),
@@ -619,14 +628,15 @@ export class Timeline411HtmlView {
     element.style.paddingLeft = `${10 + row.depth * 16}px`
     element.dataset.rowId = row.id
 
-    const icon = isTimelineRowCollapsible(row)
+    const collapsible = isTimelineRowCollapsible(row)
+    const icon = collapsible
       ? this.createRowDisclosure(row)
       : document.createElement('span')
     icon.classList.add('k411-timeline-tree-row__icon')
-    if (!isTimelineRowCollapsible(row)) icon.textContent = '·'
+    if (!collapsible) icon.textContent = row.kind === 'object' ? '◆' : '·'
     const label = document.createElement('span')
     label.className = 'k411-timeline-tree-row__label'
-    label.textContent = row.label
+    label.textContent = this.getRowDisplayLabel(row)
     const valueCell = document.createElement('span')
     valueCell.className = 'k411-timeline-tree-row__value'
     element.append(icon, label, valueCell)
@@ -643,6 +653,8 @@ export class Timeline411HtmlView {
       })
       this.updateKeyframeToggle(keyframeToggle, row, value)
       element.appendChild(keyframeToggle)
+    } else if (row.kind === 'object') {
+      this.appendPropertyCatalogControls(element, row)
     }
     this.treeRowElements.set(row.id, element)
     this.renderRowValue(valueCell, row, value)
@@ -655,15 +667,16 @@ export class Timeline411HtmlView {
     button.className = 'k411-timeline-tree-row__disclosure'
     const collapsed = this.rowExpansionState.isCollapsed(row.id)
     const rowType = row.kind === 'object' ? 'objeto' : 'grupo'
+    const label = this.getRowDisplayLabel(row)
     button.textContent = collapsed ? '▸' : '▾'
     button.setAttribute('aria-expanded', String(!collapsed))
     button.setAttribute(
       'aria-label',
-      `${collapsed ? 'Desplegar' : 'Colapsar'} ${rowType} ${row.label}`,
+      `${collapsed ? 'Desplegar' : 'Colapsar'} ${rowType} ${label}`,
     )
     button.title = collapsed
-      ? `Desplegar ${row.label}`
-      : `Colapsar ${row.label}`
+      ? `Desplegar ${label}`
+      : `Colapsar ${label}`
     button.addEventListener('click', (event) => {
       event.stopPropagation()
       this.rowExpansionState.toggle(row.id)
@@ -676,6 +689,130 @@ export class Timeline411HtmlView {
         ?.focus({preventScroll: true})
     })
     return button
+  }
+
+  private appendPropertyCatalogControls(
+    element: HTMLElement,
+    row: TimelineRow,
+  ): void {
+    const catalog = this.getPropertyCatalog(row.objectKey)
+    if (!catalog) return
+    const available = catalog.getAvailableEntries()
+    const pickerOpen = this.propertyPickerObjectKey === row.objectKey
+
+    if (pickerOpen && available.length > 0) {
+      element.appendChild(this.createPropertyPicker(row, catalog, available))
+    }
+
+    const addButton = document.createElement('button')
+    addButton.type = 'button'
+    addButton.className = 'k411-timeline-tree-row__property-add'
+    addButton.textContent = '+'
+    addButton.disabled = available.length === 0
+    addButton.setAttribute('aria-haspopup', 'listbox')
+    addButton.setAttribute('aria-expanded', String(pickerOpen && available.length > 0))
+    addButton.setAttribute('aria-label', `Añadir propiedad a ${row.label}`)
+    addButton.title = available.length > 0
+      ? `Añadir propiedad a ${row.label}`
+      : 'No hay más propiedades disponibles'
+    addButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      this.propertyPickerObjectKey = pickerOpen ? undefined : row.objectKey
+      this.render()
+      const rowElement = this.treeRowElements.get(row.id)
+      if (this.propertyPickerObjectKey === row.objectKey) {
+        rowElement
+          ?.querySelector<HTMLSelectElement>(
+            '.k411-timeline-tree-row__property-picker',
+          )
+          ?.focus({preventScroll: true})
+      } else {
+        rowElement
+          ?.querySelector<HTMLButtonElement>(
+            '.k411-timeline-tree-row__property-add',
+          )
+          ?.focus({preventScroll: true})
+      }
+    })
+    element.appendChild(addButton)
+  }
+
+  private createPropertyPicker(
+    row: TimelineRow,
+    catalog: TimelineObjectPropertyCatalog,
+    entries: readonly TimelinePropertyCatalogEntry[],
+  ): HTMLSelectElement {
+    const select = document.createElement('select')
+    select.className = 'k411-timeline-tree-row__property-picker'
+    select.setAttribute('aria-label', `Seleccionar propiedad para ${row.label}`)
+    const placeholder = document.createElement('option')
+    placeholder.value = ''
+    placeholder.textContent = 'Seleccionar…'
+    placeholder.disabled = true
+    placeholder.selected = true
+    select.appendChild(placeholder)
+
+    const categories = new Map<string, TimelinePropertyCatalogEntry[]>()
+    for (const entry of entries) {
+      const group = categories.get(entry.category) ?? []
+      group.push(entry)
+      categories.set(entry.category, group)
+    }
+    for (const [category, categoryEntries] of categories) {
+      const optionGroup = document.createElement('optgroup')
+      optionGroup.label = category
+      for (const entry of categoryEntries) {
+        const option = document.createElement('option')
+        option.value = entry.id
+        option.textContent = entry.label
+        optionGroup.appendChild(option)
+      }
+      select.appendChild(optionGroup)
+    }
+
+    select.addEventListener('click', (event) => event.stopPropagation())
+    select.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      this.propertyPickerObjectKey = undefined
+      this.render()
+      this.focusPropertyAddButton(row.id)
+    })
+    select.addEventListener('change', () => {
+      const entryId = select.value
+      if (!entryId) return
+      this.propertyPickerObjectKey = undefined
+      try {
+        catalog.activate(entryId)
+      } catch (error) {
+        console.warn(error)
+        this.render()
+      }
+      this.focusPropertyAddButton(row.id)
+    })
+    return select
+  }
+
+  private focusPropertyAddButton(rowId: string): void {
+    this.treeRowElements
+      .get(rowId)
+      ?.querySelector<HTMLButtonElement>(
+        '.k411-timeline-tree-row__property-add',
+      )
+      ?.focus({preventScroll: true})
+  }
+
+  private getPropertyCatalog(
+    objectKey: string,
+  ): TimelineObjectPropertyCatalog | undefined {
+    return getTimelineObjectPropertyCatalog(
+      this.timeline.getComposition(this.sheetId)?.getObject(objectKey),
+    )
+  }
+
+  private getRowDisplayLabel(row: TimelineRow): string {
+    return this.getPropertyRef(row)?.config.label ?? row.label
   }
 
   private updatePlayback(): void {

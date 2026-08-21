@@ -1,6 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 import projectState from '../src/state.json'
 import {Timeline411HtmlView} from '../src/timeline411/htmlView'
+import {registerTimelineObjectPropertyCatalog} from '../src/timeline411/propertyCatalog'
 import {types} from '../src/timeline411/propTypes'
 import {createTimeline, Timeline411} from '../src/timeline411/timeline'
 
@@ -94,6 +95,85 @@ describe('vista Timeline 411 HTML', () => {
     ])
     expect(view.rowExpansion.collapsedRowIds).toEqual([])
     expect(timeline.stringify()).toBe(documentBefore)
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('añade layers desde el catálogo del objeto mediante el botón +', () => {
+    const timeline = createTimeline({id: 'property-picker'})
+    const composition = timeline.composition('Scene')
+    const object = composition.object('Cube', {
+      position: types.compound({x: 0, y: 0, z: 0}, {label: 'Posición'}),
+      visible: types.boolean(true, {label: 'Visible'}),
+    })
+    registerTimelineObjectPropertyCatalog(object, {
+      objectType: 'test.mesh',
+      properties: [
+        {
+          path: ['position'],
+          category: 'Transformación',
+          read: () => ({x: 1, y: 2, z: 3}),
+        },
+        {
+          path: ['visible'],
+          category: 'Objeto',
+          read: () => false,
+        },
+      ],
+    })
+    const view = new Timeline411HtmlView(timeline, 'Scene')
+    view.mount('#timeline-test')
+
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Añadir propiedad a Cube"]',
+    )
+    expect(addButton?.textContent).toBe('+')
+    expect(
+      document.querySelector('.k411-timeline-tree-row__disclosure'),
+    ).toBeNull()
+    addButton?.click()
+
+    const picker = document.querySelector<HTMLSelectElement>(
+      '.k411-timeline-tree-row__property-picker',
+    )
+    expect(
+      [...(picker?.querySelectorAll('optgroup') ?? [])].map(({label}) => label),
+    ).toEqual(['Transformación', 'Objeto'])
+    expect(
+      [...(picker?.querySelectorAll('option') ?? [])].map(({textContent}) =>
+        textContent,
+      ),
+    ).toEqual(['Seleccionar…', 'Posición', 'Visible'])
+    if (!picker) throw new Error('No se encontró el selector de propiedades')
+    picker.value = '["position"]'
+    picker.dispatchEvent(new Event('change', {bubbles: true}))
+
+    expect(
+      timeline.document.sheetsById.Scene.staticOverrides.byObject.Cube.position,
+    ).toEqual({x: 1, y: 2, z: 3})
+    expect(timeline.store.history.undoLabel).toBe('Añadir propiedad Posición')
+    expect(
+      [...document.querySelectorAll<HTMLElement>(
+        '.k411-timeline-tree-row__label',
+      )].map(({textContent}) => textContent),
+    ).toEqual(['Cube', 'Posición', 'x', 'y', 'z'])
+    expect(
+      document.querySelector('.k411-timeline-tree-row__property-picker'),
+    ).toBeNull()
+    expect(
+      document.querySelector('.k411-timeline-tree-row__disclosure'),
+    ).not.toBeNull()
+
+    expect(timeline.store.undo()).toBe(true)
+    expect(
+      timeline.document.sheetsById.Scene.staticOverrides.byObject.Cube.position,
+    ).toBeUndefined()
+    expect(
+      [...document.querySelectorAll<HTMLElement>(
+        '.k411-timeline-tree-row__label',
+      )].map(({textContent}) => textContent),
+    ).toEqual(['Cube'])
 
     view.dispose()
     timeline.dispose()

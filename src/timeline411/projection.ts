@@ -26,6 +26,7 @@ export interface TimelineRow {
   readonly path: readonly string[]
   readonly trackId?: string
   readonly trackIds: readonly string[]
+  readonly hasChildren: boolean
 }
 
 export type TimelineRowValueMode =
@@ -303,6 +304,7 @@ function flattenNode(
     path: node.path,
     trackId: node.trackId,
     trackIds,
+    hasChildren: node.children.size > 0,
   })
   output.push(...childRows)
   return trackIds.filter((trackId) => Boolean(tracks[trackId]))
