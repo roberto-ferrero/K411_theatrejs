@@ -125,14 +125,45 @@ describe('vista Timeline 411 HTML', () => {
     const view = new Timeline411HtmlView(timeline, 'Scene')
     view.mount('#timeline-test')
 
-    const addButton = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Añadir propiedad a Cube"]',
-    )
-    expect(addButton?.textContent).toBe('+')
+    const getAddButton = () =>
+      document.querySelector<HTMLButtonElement>(
+        '.k411-timeline-tree-row__property-add',
+      )
+    const documentBeforeCancellation = timeline.stringify()
+    const undoLabelBeforeCancellation = timeline.store.history.undoLabel
+
+    expect(getAddButton()?.textContent).toBe('+')
     expect(
       document.querySelector('.k411-timeline-tree-row__disclosure'),
     ).toBeNull()
-    addButton?.click()
+    getAddButton()?.click()
+
+    const closeButton = getAddButton()
+    expect(closeButton?.textContent).toBe('×')
+    expect(closeButton?.getAttribute('aria-expanded')).toBe('true')
+    expect(closeButton?.getAttribute('aria-label')).toBe(
+      'Cerrar selector de propiedades de Cube',
+    )
+    closeButton?.click()
+    expect(document.querySelector('.k411-timeline-tree-row__property-picker')).toBeNull()
+    expect(getAddButton()?.textContent).toBe('+')
+    expect(document.activeElement).toBe(getAddButton())
+
+    getAddButton()?.click()
+    document
+      .querySelector<HTMLSelectElement>('.k411-timeline-tree-row__property-picker')
+      ?.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))
+    expect(document.querySelector('.k411-timeline-tree-row__property-picker')).toBeNull()
+    expect(document.activeElement).toBe(getAddButton())
+
+    getAddButton()?.click()
+    expect(document.querySelector('.k411-timeline-tree-row__property-picker')).not.toBeNull()
+    document.body.dispatchEvent(new MouseEvent('click', {bubbles: true}))
+    expect(document.querySelector('.k411-timeline-tree-row__property-picker')).toBeNull()
+    expect(timeline.stringify()).toBe(documentBeforeCancellation)
+    expect(timeline.store.history.undoLabel).toBe(undoLabelBeforeCancellation)
+
+    getAddButton()?.click()
 
     const picker = document.querySelector<HTMLSelectElement>(
       '.k411-timeline-tree-row__property-picker',
@@ -342,6 +373,60 @@ describe('vista Timeline 411 HTML', () => {
 
     first.dispose()
     second.dispose()
+    timeline.dispose()
+  })
+
+  it('sincroniza el scroll vertical de layers y lanes conservando las cabeceras', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+
+    const timelineScroll = document.querySelector<HTMLElement>(
+      '.k411-timeline-scroll',
+    )
+    const treeRows = document.querySelector<HTMLElement>(
+      '.k411-timeline-tree__rows',
+    )
+    const treeHeader = document.querySelector<HTMLElement>(
+      '.k411-timeline-tree__header',
+    )
+    const ruler = document.querySelector<HTMLElement>('.k411-timeline-ruler')
+    if (!timelineScroll || !treeRows || !treeHeader || !ruler) {
+      throw new Error('No se encontró la estructura de scroll vertical')
+    }
+
+    expect(treeHeader.parentElement).not.toBe(treeRows)
+    expect(ruler.querySelector('.k411-timeline-playhead-handle')).not.toBeNull()
+    expect(document.querySelector<HTMLElement>('.k411-timeline-surface')?.style.height).toBe(
+      '198px',
+    )
+
+    const changes: Array<{scrollTop: number; reason: string}> = []
+    view.on('viewport:change', ({scrollTop, reason}) => {
+      changes.push({scrollTop, reason})
+    })
+
+    timelineScroll.scrollTop = 56
+    timelineScroll.dispatchEvent(new Event('scroll'))
+    expect(treeRows.scrollTop).toBe(56)
+    expect(changes).toContainEqual({scrollTop: 56, reason: 'scroll'})
+
+    view.viewport.zoomAt(1.5, 2)
+    expect(timelineScroll.scrollTop).toBe(56)
+    expect(treeRows.scrollTop).toBe(56)
+
+    const wheel = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 28,
+    })
+    treeRows.dispatchEvent(wheel)
+    expect(wheel.defaultPrevented).toBe(true)
+    expect(timelineScroll.scrollTop).toBe(84)
+    expect(treeRows.scrollTop).toBe(84)
+    expect(changes).toContainEqual({scrollTop: 84, reason: 'scroll'})
+
+    view.dispose()
     timeline.dispose()
   })
 

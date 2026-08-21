@@ -161,6 +161,7 @@ export class Timeline411HtmlView {
       this.viewport.onChange(this.onViewportChange),
     )
     this.root.addEventListener('keydown', this.onKeyDown)
+    document.addEventListener('click', this.onDocumentClick)
     window.addEventListener('keyup', this.onKeyUp)
     this.render()
     this.updatePlayback()
@@ -173,6 +174,7 @@ export class Timeline411HtmlView {
     this.resizeObserver?.disconnect()
     this.resizeObserver = undefined
     this.root?.removeEventListener('keydown', this.onKeyDown)
+    document.removeEventListener('click', this.onDocumentClick)
     window.removeEventListener('keyup', this.onKeyUp)
     this.root?.remove()
     this.root = undefined
@@ -213,6 +215,7 @@ export class Timeline411HtmlView {
     treeHeader.textContent = 'Objetos y propiedades'
     const treeRows = document.createElement('div')
     treeRows.className = 'k411-timeline-tree__rows'
+    treeRows.addEventListener('wheel', this.onTreeWheel, {passive: false})
     this.treeRows = treeRows
     tree.append(treeHeader, treeRows)
 
@@ -460,6 +463,7 @@ export class Timeline411HtmlView {
     this.currentRows = rows
     const viewport = this.viewport.snapshot
     const desiredScrollLeft = getViewportScrollLeft(viewport)
+    const desiredScrollTop = this.timelineScroll.scrollTop
     this.surfaceWidth = getViewportVirtualWidth(viewport)
     const contentHeight = rulerHeight + rows.length * rowHeight
 
@@ -612,8 +616,14 @@ export class Timeline411HtmlView {
     playheadHandle.className = 'k411-timeline-playhead-handle'
     playheadHandle.setAttribute('aria-label', 'Mover cabeza reproductora')
     playheadHandle.title = 'Arrastrar cabeza reproductora'
-    playheadHandle.addEventListener('pointerdown', this.startPlayheadDrag)
-    this.surface.append(playhead, playheadHandle)
+    playheadHandle.addEventListener('pointerdown', (event) => {
+      event.stopPropagation()
+      this.startPlayheadDrag(event)
+    })
+    ruler.appendChild(playheadHandle)
+    this.surface.appendChild(playhead)
+    this.timelineScroll.scrollTop = desiredScrollTop
+    this.lastScrollTop = this.timelineScroll.scrollTop
     this.updatePlayback()
     this.syncTreeScroll()
   }
@@ -698,21 +708,29 @@ export class Timeline411HtmlView {
     const catalog = this.getPropertyCatalog(row.objectKey)
     if (!catalog) return
     const available = catalog.getAvailableEntries()
-    const pickerOpen = this.propertyPickerObjectKey === row.objectKey
+    const pickerOpen =
+      this.propertyPickerObjectKey === row.objectKey && available.length > 0
 
-    if (pickerOpen && available.length > 0) {
+    if (pickerOpen) {
       element.appendChild(this.createPropertyPicker(row, catalog, available))
     }
 
     const addButton = document.createElement('button')
     addButton.type = 'button'
     addButton.className = 'k411-timeline-tree-row__property-add'
-    addButton.textContent = '+'
+    addButton.textContent = pickerOpen ? '×' : '+'
     addButton.disabled = available.length === 0
     addButton.setAttribute('aria-haspopup', 'listbox')
-    addButton.setAttribute('aria-expanded', String(pickerOpen && available.length > 0))
-    addButton.setAttribute('aria-label', `Añadir propiedad a ${row.label}`)
-    addButton.title = available.length > 0
+    addButton.setAttribute('aria-expanded', String(pickerOpen))
+    addButton.setAttribute(
+      'aria-label',
+      pickerOpen
+        ? `Cerrar selector de propiedades de ${row.label}`
+        : `Añadir propiedad a ${row.label}`,
+    )
+    addButton.title = pickerOpen
+      ? 'Cerrar selector de propiedades'
+      : available.length > 0
       ? `Añadir propiedad a ${row.label}`
       : 'No hay más propiedades disponibles'
     addButton.addEventListener('click', (event) => {
@@ -770,7 +788,6 @@ export class Timeline411HtmlView {
       select.appendChild(optionGroup)
     }
 
-    select.addEventListener('click', (event) => event.stopPropagation())
     select.addEventListener('keydown', (event) => {
       event.stopPropagation()
       if (event.key !== 'Escape') return
@@ -801,6 +818,22 @@ export class Timeline411HtmlView {
         '.k411-timeline-tree-row__property-add',
       )
       ?.focus({preventScroll: true})
+  }
+
+  private readonly onDocumentClick = (event: MouseEvent): void => {
+    if (!this.propertyPickerObjectKey || !this.root) return
+    const target = event.target
+    if (
+      target instanceof Element &&
+      this.root.contains(target) &&
+      target.closest(
+        '.k411-timeline-tree-row__property-add, .k411-timeline-tree-row__property-picker',
+      )
+    ) {
+      return
+    }
+    this.propertyPickerObjectKey = undefined
+    this.render()
   }
 
   private getPropertyCatalog(
@@ -1512,7 +1545,22 @@ export class Timeline411HtmlView {
 
   private syncTreeScroll(): void {
     if (!this.timelineScroll || !this.treeRows) return
-    this.treeRows.scrollTop = Math.max(0, this.timelineScroll.scrollTop - rulerHeight)
+    this.treeRows.scrollTop = this.timelineScroll.scrollTop
+  }
+
+  private readonly onTreeWheel = (event: WheelEvent): void => {
+    if (!this.timelineScroll || event.ctrlKey || event.metaKey) return
+    const delta = normalizeWheelDelta(event.deltaY, event)
+    if (Math.abs(delta) < 1e-6) return
+
+    const previousScrollTop = this.timelineScroll.scrollTop
+    this.timelineScroll.scrollTop += delta
+    if (this.timelineScroll.scrollTop === previousScrollTop) return
+
+    event.preventDefault()
+    this.syncTreeScroll()
+    this.lastScrollTop = this.timelineScroll.scrollTop
+    this.emitViewportChange('scroll')
   }
 
   private readonly onTimelineWheel = (event: WheelEvent): void => {

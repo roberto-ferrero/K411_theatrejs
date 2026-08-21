@@ -497,7 +497,9 @@
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
+  overscroll-behavior: contain;
   background: #10131a;
+  scrollbar-gutter: stable;
   scrollbar-color: #3b4351 #171b24;
   scrollbar-width: thin;
 }
@@ -506,7 +508,7 @@
   position: relative;
   min-width: 100%;
   min-height: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .k411-timeline-svg {
@@ -530,11 +532,10 @@
 }
 
 .k411-timeline-ruler {
-  position: absolute;
-  z-index: 5;
+  position: sticky;
+  z-index: 15;
   top: 0;
-  right: 0;
-  left: 0;
+  width: 100%;
   height: 30px;
   border-bottom: 1px solid var(--k411-border);
   background: rgb(29 34 45 / 96%);

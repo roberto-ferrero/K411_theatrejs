@@ -1216,6 +1216,22 @@ El pan puede proceder de trackpad horizontal, `Shift + rueda`, `Espacio + drag`,
 botón central, scrollbar o API. Todos esos orígenes producen el mismo cambio en
 el modelo de viewport.
 
+### Vertical Layer Scroll
+
+Desplazamiento utilizado cuando el número de layers supera el alto disponible.
+No cambia el rango temporal ni forma parte de `animation.json`.
+
+En la vista HTML de Timeline 411, el área temporal es la fuente canónica de
+`scrollTop` y el árbol de propiedades replica ese valor. Así se mantienen
+alineadas cada fila y su lane aunque la rueda se utilice sobre cualquiera de los
+dos paneles. La toolbar, la cabecera del árbol y el ruler permanecen fijos.
+
+El scroll vertical se conserva durante los rerenders mientras la geometría del
+contenido lo permita y emite `viewport:change` con motivo `scroll`. No debe
+confundirse con la virtualización: el scroll permite recorrer todas las filas;
+la virtualización evitará dibujar filas fuera del área visible cuando el volumen
+de datos lo requiera.
+
 ### Pixels per Second
 
 Escala horizontal derivada del viewport.
@@ -1338,6 +1354,12 @@ Botón `+` situado en la fila de un objeto con catálogo. Abre un selector nativ
 agrupado por category y sólo muestra available properties. La selección crea la
 layer correspondiente; no crea keyframes hasta que el usuario utilice el rombo
 de la propiedad.
+
+Cuando el selector está abierto, el botón adopta el símbolo `×` y permite
+cancelarlo. También se cierra con `Escape` o mediante un clic exterior. Cancelar
+es una operación puramente visual y no afecta al documento, undo/redo, selección
+o playhead. El cierre con `×` o `Escape` devuelve el foco al botón; un clic
+exterior no roba el foco al nuevo destino.
 
 ### Property Value Cell
 

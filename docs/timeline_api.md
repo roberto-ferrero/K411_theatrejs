@@ -163,6 +163,19 @@ static override con el valor actual del objeto anfitrión; una compound prop cre
 todas sus hojas en una sola transacción. El catálogo es runtime y no se exporta,
 pero los valores activados sí usan el modelo normal de Theatre.js.
 
+Mientras el selector está abierto, el botón muestra `×`. El usuario puede
+cancelarlo mediante `×`, `Escape` o un clic exterior. Ninguna de esas acciones
+modifica el documento, el historial, la selección o el playhead. El cierre por
+botón o teclado devuelve el foco al control; el clic exterior conserva el foco
+en el elemento elegido por el usuario.
+
+Cuando el número de layers supera el alto disponible, el área temporal ofrece
+el único scroll vertical y sincroniza su `scrollTop` con el árbol. La rueda puede
+usarse sobre cualquiera de los dos paneles. La toolbar, la cabecera del árbol y
+el ruler permanecen visibles; el scroll horizontal sigue siendo exclusivo del
+eje temporal. Los rerenders conservan la posición vertical y el movimiento emite
+`viewport:change` con motivo `scroll`, sin crear historial ni modificar el JSON.
+
 Si un keyframe coincide con la línea vertical del playhead, el keyframe tiene
 prioridad de puntero. La vista HTML lo apila por encima de la línea, muestra
 cursor de mano y reserva `ew-resize` para el ruler y el handle superior del
@@ -1995,6 +2008,8 @@ Interacciones HTML implementadas:
 - `Espacio + drag` o botón central: pan por arrastre.
 - `F` o doble clic en el ruler: fit de la secuencia completa.
 - Scrollbar horizontal nativa sincronizada con el visible range.
+- Rueda vertical sobre el árbol o las lanes: scroll de filas sincronizado.
+- Toolbar, cabecera del árbol y ruler fijos durante el desplazamiento vertical.
 
 El evento de vista contiene el snapshot mínimo necesario para sincronizar otros
 componentes de la aplicación anfitriona:
@@ -2218,6 +2233,11 @@ Resultado: scroll horizontal y vertical
 
 Los thresholds son configurables por vista, pero estos valores constituyen el
 contrato y tema por defecto.
+
+Este overflow exterior por debajo de `640 × 240 px` es distinto del scroll
+vertical interno de layers. El primero permite recorrer la superficie mínima del
+componente; el segundo aparece cuando el contenido de filas supera el cuerpo
+disponible y mantiene alineados el árbol y las lanes.
 
 ### Paneles redimensionables
 

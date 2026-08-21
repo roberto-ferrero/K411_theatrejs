@@ -21,6 +21,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - La interfaz actual usa HTML, CSS y SVG; WebGL permanece inactivo.
 - La GUI se monta en un contenedor dedicado, ocupa el 100 % y conserva una
   superficie mínima de `640 × 240 px` con scroll por debajo de ese tamaño.
+- Cuando las layers superan el alto disponible, el área de lanes proporciona el
+  único scroll vertical y sincroniza el árbol de propiedades con su `scrollTop`.
 - Shadow DOM permanece desactivado.
 
 ### Decisiones de la API de objetos y tracks
@@ -71,6 +73,10 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
     torus, por lo que el JSON no necesita adaptación.
 12. El contrato es reutilizable para cámaras, luces u otros hosts; sus catálogos
     concretos se implementarán de forma incremental.
+13. Mientras el selector está abierto, `+` cambia a `×`. Puede cerrarse sin
+    seleccionar mediante ese botón, `Escape` o un clic exterior. La cancelación
+    no modifica documento, historial, selección ni playhead; `×` y `Escape`
+    devuelven el foco al botón.
 
 ### Decisiones de valores en las layers
 
@@ -98,6 +104,24 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    independiente del renderer.
 10. El viewport se conserva en memoria por vista hasta implementar el sidecar y
     nunca se incluye en `animation.json`.
+
+### Decisiones del scroll vertical
+
+1. La toolbar queda fuera del desplazamiento vertical.
+2. La cabecera `Objetos y propiedades` y el ruler permanecen visibles mientras
+   se recorren las layers.
+3. El área temporal es la única fuente canónica de `scrollTop`; el árbol copia
+   exactamente ese valor para mantener alineadas filas y lanes.
+4. La rueda vertical sobre el árbol desplaza el área temporal, por lo que se
+   puede navegar desde cualquiera de los dos paneles.
+5. El scroll horizontal continúa afectando únicamente al eje temporal.
+6. Un rerender por zoom, edición o configuración conserva la posición vertical
+   siempre que siga siendo válida para la nueva altura del contenido.
+7. El scroll es estado visual de la vista: no modifica selección, playhead,
+   historial ni `animation.json` y se emite como `viewport:change` con motivo
+   `scroll`.
+8. Este comportamiento resuelve el overflow normal de layers. La virtualización
+   de conjuntos muy grandes continúa siendo una optimización separada.
 
 ### Decisiones del árbol plegable
 
@@ -292,6 +316,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Viewport temporal renderer-neutral con visible range y modo fit/manual.
 - [x] Zoom focal, pan, límites y fit de secuencia.
 - [x] Scrollbar horizontal nativa sincronizada con el viewport.
+- [x] Scroll vertical único y sincronizado entre árbol y lanes, con toolbar,
+      cabecera y ruler fijos.
 - [x] Grid adaptativo calculado únicamente para el rango visible.
 - [x] Viewports independientes para varias vistas del mismo timeline.
 - [x] Evento `viewport:change` con rango, zoom y motivo.
@@ -325,6 +351,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
       estado anidado independiente por vista.
 - [x] Botón `+` y selector agrupado para activar properties desde la fila del
       objeto, sin duplicar las que ya están en el timeline.
+- [x] Cierre cancelable del selector mediante `×`, `Escape` o clic exterior,
+      sin efectos sobre el modelo ni el historial.
 - [x] Alta de layers simples o compuestas como static overrides mediante una
       única transacción reversible.
 
@@ -353,7 +381,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Evento `object:configuration` para refrescar vistas cuando cambia un
       catálogo o schema runtime.
 
-La suite actual contiene 55 pruebas. `npm test` y
+La suite actual contiene 56 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -369,6 +397,7 @@ La suite actual contiene 55 pruebas. `npm test` y
 ### Dope Sheet y viewport
 
 - [x] Zoom, pan, visible range y scrollbar horizontal.
+- [x] Scroll vertical sincronizado para el overflow de layers.
 - [x] Árbol plegable y estado de filas por vista en memoria.
 - [x] Indicadores editables de duración y posición.
 - [ ] Focus Range completo y cortinas exteriores.
