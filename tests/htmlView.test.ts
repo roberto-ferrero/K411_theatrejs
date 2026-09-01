@@ -609,6 +609,30 @@ describe('vista Timeline 411 HTML', () => {
     })
     expect(reasons).toContain('fit')
 
+    firstScroll.dispatchEvent(
+      new WheelEvent('wheel', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 300,
+        ctrlKey: true,
+        deltaY: 10_000,
+      }),
+    )
+    expect(first.viewport.snapshot.visibleRange).toEqual([0, 4.5])
+    expect(first.viewport.snapshot.zoom).toBeCloseTo(2 / 3)
+    expect(
+      [...document.querySelectorAll<HTMLButtonElement>(
+        '#timeline-test .k411-timeline-keyframe',
+      )].find((button) => button.title === 'x: 3.000s')?.style.left,
+    ).toBe('400px')
+
+    root?.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true, key: 'f'}))
+    expect(first.viewport.snapshot).toMatchObject({
+      visibleRange: [0, 3],
+      zoom: 1,
+      mode: 'fit',
+    })
+
     first.viewport.zoomAt(1.5, 2)
     document
       .querySelector<HTMLElement>('#timeline-test .k411-timeline-ruler')

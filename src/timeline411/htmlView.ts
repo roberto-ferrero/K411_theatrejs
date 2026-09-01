@@ -22,6 +22,7 @@ import {
   collectRowConnectorIntervals,
   collectRowKeyframes,
   createViewportGridTicks,
+  getTimelineContentEnd,
   projectTimelineRowValue,
   snapToFrame,
 } from './projection'
@@ -138,6 +139,7 @@ export class Timeline411HtmlView {
     this.viewport = new TimelineViewport({
       duration: timeline.getDuration(sheetId),
       fps: timeline.getFps(sheetId),
+      contentEnd: getTimelineContentEnd(timeline.document, sheetId),
     })
   }
 
@@ -1726,6 +1728,7 @@ export class Timeline411HtmlView {
       this.timeline.getDuration(this.sheetId),
       this.timeline.getFps(this.sheetId),
       Math.max(1, this.timelineScroll.clientWidth),
+      getTimelineContentEnd(this.timeline.document, this.sheetId),
     )
   }
 
@@ -2099,7 +2102,11 @@ export class Timeline411HtmlView {
   private timeFromClientX(clientX: number, snap: boolean): number {
     if (!this.timelineScroll) return 0
     const rect = this.timelineScroll.getBoundingClientRect()
-    const time = viewportXToTime(clientX - rect.left, this.viewport.snapshot)
+    const time = clampNumber(
+      viewportXToTime(clientX - rect.left, this.viewport.snapshot),
+      0,
+      this.timeline.getDuration(this.sheetId),
+    )
     return snap ? snapToFrame(time, this.timeline.getFps(this.sheetId)) : time
   }
 

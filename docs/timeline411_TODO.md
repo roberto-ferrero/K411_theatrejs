@@ -119,18 +119,26 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 
 ### Decisiones del viewport temporal
 
-1. La vista comienza en modo `fit` mostrando toda la secuencia.
+1. La vista comienza en modo `fit` mostrando desde `0` hasta el final del
+   contenido, sin margen adicional.
 2. Después del primer zoom o pan pasa a modo `manual`; un resize conserva su
    centro y rango temporal.
 3. `Ctrl/Cmd + rueda` aplica zoom focal alrededor del cursor.
 4. Trackpad horizontal y `Shift + rueda` hacen pan horizontal.
 5. `Espacio + drag` y el botón central permiten arrastrar el viewport.
-6. El rango queda limitado a `[0, duración]`, sin overscroll.
-7. El rango mínimo es `max(2 frames, 0.05 segundos)`.
-8. La tecla `F` y el doble clic sobre el ruler restauran el modo `fit`.
-9. HTML utiliza su scrollbar nativa, sincronizada con un estado de viewport
+6. El final del contenido se calcula como
+   `max(duración, posición del último keyframe)`. Si no hay keyframes, se usa la
+   duración.
+7. El unzoom máximo muestra `[0, finalContenido × 1.5]`: el contenido ocupa los
+   primeros `2/3` del ancho y el último tercio queda como margen derecho.
+8. Al alejarse más allá del fit, el inicio permanece anclado en `0`. Ese margen
+   es sólo visual: no amplía la duración, el playback ni los límites de edición.
+9. El rango mínimo de zoom es `max(2 frames, 0.05 segundos)`.
+10. La tecla `F` y el doble clic sobre el ruler restauran el modo `fit` sin
+    margen, aunque el usuario estuviera en el máximo unzoom.
+11. HTML utiliza su scrollbar nativa, sincronizada con un estado de viewport
    independiente del renderer.
-10. El viewport se conserva en memoria por vista hasta implementar el sidecar y
+12. El viewport se conserva en memoria por vista hasta implementar el sidecar y
     nunca se incluye en `animation.json`.
 
 ### Decisiones del scroll vertical
@@ -366,6 +374,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
       sensibilidad configurable, modificadores, clamp, preview y un solo undo.
 - [x] Viewport temporal renderer-neutral con visible range y modo fit/manual.
 - [x] Zoom focal, pan, límites y fit de secuencia.
+- [x] Unzoom hasta `1.5 × finalContenido`, con el contenido en `2/3` del ancho,
+      margen derecho visual y fit sin margen.
 - [x] Scrollbar horizontal nativa sincronizada con el viewport.
 - [x] Scroll vertical único y sincronizado entre árbol y lanes, con toolbar,
       cabecera y ruler fijos.
@@ -436,7 +446,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Evento `object:configuration` para refrescar vistas cuando cambia un
       catálogo o schema runtime.
 
-La suite actual contiene 69 pruebas. `npm test` y
+La suite actual contiene 70 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks

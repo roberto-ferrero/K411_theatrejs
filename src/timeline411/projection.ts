@@ -116,6 +116,21 @@ export function collectRowKeyframes(
   return [...byPosition.values()].sort((left, right) => left.position - right.position)
 }
 
+export function getTimelineContentEnd(
+  document: TimelineDocument,
+  sheetId: string,
+): number {
+  const sequence = document.sheetsById[sheetId]?.sequence
+  let contentEnd = sequence?.length ?? 0
+  for (const objectTracks of Object.values(sequence?.tracksByObject ?? {})) {
+    for (const track of Object.values(objectTracks.trackData)) {
+      const lastKeyframe = track.keyframes[track.keyframes.length - 1]
+      if (lastKeyframe) contentEnd = Math.max(contentEnd, lastKeyframe.position)
+    }
+  }
+  return contentEnd
+}
+
 export function collectRowConnectorIntervals(
   document: TimelineDocument,
   sheetId: string,
@@ -212,6 +227,8 @@ export function createGridTicks(
       visibleEnd: duration,
       visibleRange: [0, duration],
       duration,
+      contentEnd: duration,
+      maximumVisibleSpan: duration * 1.5,
       fps,
       width,
       zoom: 1,
@@ -225,7 +242,7 @@ export function createViewportGridTicks(
   viewport: TimelineViewportSnapshot,
   minimumSpacing = 54,
 ): readonly GridTick[] {
-  const duration = viewport.duration
+  const duration = viewport.maximumVisibleSpan
   const width = viewport.width
   const fps = viewport.fps
   const visibleStart = viewport.visibleStart

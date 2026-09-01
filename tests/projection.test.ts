@@ -5,6 +5,7 @@ import {
   buildTimelineRows,
   collectRowConnectorIntervals,
   createViewportGridTicks,
+  getTimelineContentEnd,
   projectTimelineRowValue,
   snapToFrame,
   timeToX,
@@ -21,15 +22,14 @@ describe('proyección temporal', () => {
   })
 
   it('ajusta a frames y genera filas independientes del renderer', () => {
+    const document = parseTheatreProjectState(projectState)
     expect(snapToFrame(1.017, 30)).toBe(1.033333)
-    const rows = buildTimelineRows(
-      parseTheatreProjectState(projectState),
-      'Animated scene',
-    )
+    const rows = buildTimelineRows(document, 'Animated scene')
     expect(rows.some((row) => row.kind === 'object' && row.label === 'Torus Knot')).toBe(
       true,
     )
     expect(rows.filter((row) => row.kind === 'track')).toHaveLength(3)
+    expect(getTimelineContentEnd(document, 'Animated scene')).toBe(3)
   })
 
   it('une conectores descendientes sin cubrir los huecos entre tracks', () => {

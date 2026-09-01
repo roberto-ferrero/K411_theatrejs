@@ -1232,12 +1232,15 @@ popovers.
 Descripción del rango temporal visible y de las dimensiones del área de dibujo.
 En Timeline 411 es una unidad lógica independiente del renderer. Mantiene
 `visibleStart`, `visibleEnd`, duración, FPS, anchura, zoom y modo `fit` o
-`manual`.
+`manual`. También distingue `contentEnd`, que representa el final temporal del
+contenido, de la duración de reproducción.
 
 ### Visible Range
 
 Intervalo temporal mostrado por el viewport, por ejemplo `[2, 8]` segundos.
-Se limita al intervalo `[0, duración]` y nunca modifica los tiempos almacenados.
+Durante el zoom cercano se desplaza dentro del contenido. En el máximo unzoom
+puede terminar después del contenido para proporcionar margen visual, pero nunca
+modifica los tiempos almacenados ni la duración de reproducción.
 
 ### Zoom
 
@@ -1247,6 +1250,23 @@ indirectamente modificando el visible range.
 Timeline 411 utiliza zoom focal: el instante situado bajo el cursor conserva la
 misma coordenada visual antes y después de aplicar el zoom. El rango mínimo es el
 mayor entre dos frames y `0.05 s`.
+
+### Content End / Final del contenido
+
+Último tiempo que debe encajarse sin margen. Se calcula como el máximo entre la
+duración de la secuencia y la posición del último keyframe. Si no existen
+keyframes, coincide con la duración.
+
+### Maximum Unzoom / Unzoom máximo
+
+Máximo alejamiento permitido. El visible range pasa a ser
+`[0, contentEnd × 1.5]`, por lo que el intervalo entre cero y el final del
+contenido ocupa `2/3` del ancho y queda `1/3` libre a la derecha. El inicio se
+mantiene anclado en cero.
+
+Este margen pertenece sólo al viewport: no se guarda en `animation.json`, no
+amplía el playback y no permite crear keyframes fuera de la duración. `F` o el
+doble clic sobre el ruler regresan al fit `[0, contentEnd]` sin margen.
 
 ### Pan / Horizontal Scroll
 

@@ -130,7 +130,9 @@ estado de vista ni modifican el formato `animation.json`.
 El viewport temporal también está implementado como estado independiente de la
 vista. Empieza encajando toda la secuencia y ofrece zoom focal, pan, rango
 visible, fit y sincronización con la scrollbar HTML. Dos vistas del mismo
-timeline no comparten viewport.
+timeline no comparten viewport. El unzoom manual puede mostrar un tercio de
+margen a la derecha: el final del contenido queda situado en `2/3` del ancho.
+`F` y el doble clic restauran el fit sin ese margen.
 
 La duración total se edita en la toolbar. El campo acepta un número finito mayor
 que cero, confirma con `Enter` o blur y cancela con `Escape`. La modificación usa
@@ -2082,6 +2084,8 @@ interface TimelineViewportSnapshot {
   readonly visibleEnd: number
   readonly visibleRange: readonly [number, number]
   readonly duration: number
+  readonly contentEnd: number
+  readonly maximumVisibleSpan: number
   readonly fps: number
   readonly width: number
   readonly zoom: number
@@ -2089,12 +2093,20 @@ interface TimelineViewportSnapshot {
 }
 ```
 
+`contentEnd` es `max(duration, último keyframe)` y usa `duration` cuando no hay
+claves. `maximumVisibleSpan` equivale a `contentEnd × 1.5`. En el máximo unzoom,
+el rango es `[0, maximumVisibleSpan]`, `zoom` vale `2/3` y el margen adicional es
+puramente visual: no cambia el documento ni permite reproducir o editar fuera de
+la duración. `fitToSequence()` vuelve a `[0, contentEnd]` sin margen.
+
 Interacciones HTML implementadas:
 
 - `Ctrl/Cmd + rueda`: zoom alrededor del cursor.
 - Trackpad horizontal o `Shift + rueda`: pan.
 - `Espacio + drag` o botón central: pan por arrastre.
 - `F` o doble clic en el ruler: fit de la secuencia completa.
+- Unzoom máximo: contenido en los primeros `2/3` y margen visual en el último
+  tercio.
 - Scrollbar horizontal nativa sincronizada con el visible range.
 - Rueda vertical sobre el árbol o las lanes: scroll de filas sincronizado.
 - Toolbar, cabecera del árbol y ruler fijos durante el desplazamiento vertical.
@@ -2116,8 +2128,12 @@ interface ViewportChangeEvent {
     | 'fit'
     | 'programmatic'
     | 'duration'
+    | 'content'
 }
 ```
+
+El motivo `content` se emite cuando cambia el último tiempo relevante —por
+ejemplo, al mover el keyframe final— sin que cambie la duración de reproducción.
 
 El estado permanece en memoria y pertenece a la vista. Su futura persistencia se
 realizará dentro de `timeline411.editor.json`, nunca dentro de

@@ -36,6 +36,33 @@ describe('viewport temporal', () => {
     expect(viewport.snapshot.mode).toBe('manual')
   })
 
+  it('permite unzoom hasta dejar el contenido en dos tercios y fit sin margen', () => {
+    const viewport = new TimelineViewport({duration: 10, fps: 30, width: 800})
+
+    viewport.zoomAt(5, 0.000001)
+    expect(viewport.snapshot.visibleRange).toEqual([0, 15])
+    expect(viewport.snapshot.zoom).toBeCloseTo(2 / 3)
+    expect(timeToViewportX(10, viewport.snapshot)).toBeCloseTo(800 * 2 / 3)
+    expect(timeToViewportSurfaceX(10, viewport.snapshot)).toBeCloseTo(800 * 2 / 3)
+    expect(getViewportVirtualWidth(viewport.snapshot)).toBe(800)
+    expect(getViewportScrollLeft(viewport.snapshot)).toBe(0)
+
+    viewport.fitToSequence()
+    expect(viewport.snapshot.visibleRange).toEqual([0, 10])
+    expect(viewport.snapshot.zoom).toBe(1)
+    expect(timeToViewportSurfaceX(10, viewport.snapshot)).toBe(800)
+
+    const contentBeyondDuration = new TimelineViewport({
+      duration: 3,
+      contentEnd: 4,
+      fps: 30,
+      width: 600,
+    })
+    expect(contentBeyondDuration.snapshot.visibleRange).toEqual([0, 4])
+    contentBeyondDuration.zoomAt(2, 0.000001)
+    expect(contentBeyondDuration.snapshot.visibleRange).toEqual([0, 6])
+  })
+
   it('limita zoom y pan al rango temporal válido', () => {
     const viewport = new TimelineViewport({duration: 10, fps: 30, width: 800})
     viewport.zoomAt(5, 1_000_000)
