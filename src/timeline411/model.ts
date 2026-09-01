@@ -37,6 +37,8 @@ export interface TheatreObjectTracksState {
 
 export type TheatreKeyframeType = 'bezier' | 'hold'
 
+export type CubicBezierHandles = readonly [number, number, number, number]
+
 export interface TheatreKeyframe {
   id: string
   value: SerializableValue

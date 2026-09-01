@@ -127,6 +127,13 @@ describe('API pública de objetos y tracks', () => {
     expect(second.snapshot.handles.slice(0, 2)).toEqual([0.58, 1])
 
     timeline.editor.transaction((transaction) => {
+      transaction.setBezierInterpolation(first, [0.2, -0.4, 0.75, 1.35])
+    })
+    expect(first.snapshot.handles.slice(2)).toEqual([0.2, -0.4])
+    expect(second.snapshot.handles.slice(0, 2)).toEqual([0.75, 1.35])
+    expect(first.snapshot.type).toBeUndefined()
+
+    timeline.editor.transaction((transaction) => {
       transaction.updateKeyframe(second, {position: 3, value: 12})
     })
     expect(second.snapshot).toMatchObject({position: 3, value: 12})

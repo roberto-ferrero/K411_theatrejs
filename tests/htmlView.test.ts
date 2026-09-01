@@ -1088,10 +1088,20 @@ describe('vista Timeline 411 HTML', () => {
     const actions = toolbar?.querySelector<HTMLElement>(
       '.k411-timeline-toolbar__actions',
     )
-    const interpolation = toolbar?.querySelector<HTMLSelectElement>(
+    const interpolation = toolbar?.querySelector<HTMLButtonElement>(
       '.k411-timeline-preset',
     )
-    if (!toolbar || !basic || !context || !actions || !interpolation) {
+    const interpolationMenu = toolbar?.querySelector<HTMLElement>(
+      '.k411-timeline-preset-menu',
+    )
+    if (
+      !toolbar ||
+      !basic ||
+      !context ||
+      !actions ||
+      !interpolation ||
+      !interpolationMenu
+    ) {
       throw new Error('No se encontraron los bloques de la toolbar')
     }
     expect([...toolbar.children]).toEqual([basic, context, actions])
@@ -1115,17 +1125,74 @@ describe('vista Timeline 411 HTML', () => {
       context.querySelector<HTMLInputElement>('.k411-timeline-keyframe-time-input')
         ?.value,
     ).toBe('0.000')
-    expect(interpolation.value).toBe('imported')
-    expect(interpolation.selectedOptions[0]?.textContent).toBe('Curva importada')
+    expect(interpolation.dataset.easing).toBe('imported')
+    expect(
+      interpolation.querySelector('.k411-timeline-preset__label')?.textContent,
+    ).toBe('Curva importada')
     expect(interpolation.disabled).toBe(false)
+    expect(interpolation.querySelector('[data-easing-preview="imported"]')).not.toBeNull()
+    expect(
+      document.querySelectorAll(
+        '.k411-timeline-connector[data-easing="imported"]',
+      ),
+    ).toHaveLength(3)
 
-    interpolation.value = 'linear'
-    interpolation.dispatchEvent(new Event('change', {bubbles: true}))
-    expect(interpolation.value).toBe('linear')
+    interpolation.click()
+    expect(interpolation.getAttribute('aria-expanded')).toBe('true')
+    expect(interpolationMenu.hidden).toBe(false)
+    expect(interpolationMenu.getAttribute('role')).toBe('listbox')
+    expect(
+      [...interpolationMenu.querySelectorAll<HTMLElement>(
+        '.k411-timeline-preset-option__label',
+      )].map(({textContent}) => textContent),
+    ).toEqual([
+      'Curva importada',
+      'Linear',
+      'Hold',
+      'Ease',
+      'Ease In',
+      'Ease Out',
+      'Ease In Out',
+    ])
+    expect(
+      interpolationMenu.querySelectorAll('.k411-easing-preview'),
+    ).toHaveLength(7)
+    interpolationMenu.dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}),
+    )
+    expect(interpolationMenu.hidden).toBe(true)
+    expect(document.activeElement).toBe(interpolation)
+
+    interpolation.click()
+    interpolationMenu
+      .querySelector<HTMLButtonElement>('[data-easing-option="linear"]')
+      ?.click()
+    expect(interpolation.dataset.easing).toBe('linear')
     const xTrack = timeline.document.sheetsById['Animated scene'].sequence
       ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde
     expect(xTrack?.keyframes[0].handles.slice(2)).toEqual([0, 0])
     expect(xTrack?.keyframes[1].handles.slice(0, 2)).toEqual([1, 1])
+    expect(
+      document.querySelectorAll(
+        '.k411-timeline-connector[data-easing="linear"]',
+      ),
+    ).toHaveLength(1)
+
+    interpolation.click()
+    interpolationMenu
+      .querySelector<HTMLButtonElement>('[data-easing-option="hold"]')
+      ?.click()
+    expect(interpolation.dataset.easing).toBe('hold')
+    expect(
+      timeline.document.sheetsById['Animated scene'].sequence?.tracksByObject[
+        'Torus Knot'
+      ].trackData.Q9IUK1iBde.keyframes[0].type,
+    ).toBe('hold')
+    expect(
+      document.querySelector<SVGLineElement>(
+        '.k411-timeline-connector[data-easing="hold"]',
+      )?.getAttribute('stroke-dasharray'),
+    ).toBe('4 3')
 
     const lastX = [...document.querySelectorAll<HTMLButtonElement>(
       '.k411-timeline-keyframe',
@@ -1133,14 +1200,122 @@ describe('vista Timeline 411 HTML', () => {
     if (!lastX) throw new Error('No se encontró el último keyframe de x')
     lastX.click()
     expect(context.hidden).toBe(false)
-    expect(interpolation.value).toBe('none')
-    expect(interpolation.selectedOptions[0]?.textContent).toBe('Sin segmento')
+    expect(interpolation.dataset.easing).toBe('none')
+    expect(
+      interpolation.querySelector('.k411-timeline-preset__label')?.textContent,
+    ).toBe('Sin segmento')
     expect(interpolation.disabled).toBe(true)
 
     document
       .querySelector<HTMLElement>('.k411-timeline-lane--track')
       ?.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
     expect(context.hidden).toBe(true)
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('edita curvas importadas con preview, cancelar, aplicar y undo', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+
+    const firstX = [...document.querySelectorAll<HTMLButtonElement>(
+      '.k411-timeline-keyframe',
+    )].find((button) => button.title === 'x: 0.000s')
+    if (!firstX) throw new Error('No se encontro el primer keyframe de x')
+    firstX.click()
+
+    const editButton = document.querySelector<HTMLButtonElement>(
+      '.k411-timeline-preset-edit',
+    )
+    const editor = document.querySelector<HTMLElement>('.k411-bezier-editor')
+    if (!editButton || !editor) throw new Error('No se encontro el editor Bezier')
+    expect(editButton.hidden).toBe(false)
+    editButton.click()
+    expect(editor.hidden).toBe(false)
+    expect(
+      [...editor.querySelectorAll<HTMLInputElement>('[data-bezier-value]')]
+        .map((input) => input.value),
+    ).toEqual(['0.645', '0.045', '0.355', '1'])
+
+    const y1 = editor.querySelector<HTMLInputElement>('[data-bezier-value="y1"]')
+    if (!y1) throw new Error('No se encontro y1')
+    const revisionBefore = timeline.store.revision
+    y1.value = '-0.25'
+    y1.dispatchEvent(new Event('input', {bubbles: true}))
+    let track = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde
+    expect(track?.keyframes[0].handles[3]).toBe(-0.25)
+    expect(timeline.store.revision).toBe(revisionBefore)
+
+    editor.querySelector<HTMLButtonElement>('[data-bezier-cancel]')?.click()
+    track = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde
+    expect(editor.hidden).toBe(true)
+    expect(track?.keyframes[0].handles[3]).toBe(0.045)
+    expect(timeline.store.revision).toBe(revisionBefore)
+
+    editButton.click()
+    const x1 = editor.querySelector<HTMLInputElement>('[data-bezier-value="x1"]')
+    if (!x1) throw new Error('No se encontro x1')
+    x1.value = '0.2'
+    x1.dispatchEvent(new Event('input', {bubbles: true}))
+    editor.querySelector<HTMLButtonElement>('[data-bezier-apply]')?.click()
+    track = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde
+    expect(editor.hidden).toBe(true)
+    expect(track?.keyframes[0].handles[2]).toBe(0.2)
+    expect(timeline.store.revision).toBe(revisionBefore + 1)
+    expect(timeline.store.history.undoLabel).toBe('Editar curva Bezier')
+    expect(timeline.store.undo()).toBe(true)
+    expect(
+      timeline.document.sheetsById['Animated scene'].sequence
+        ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde.keyframes[0]
+        .handles[2],
+    ).toBe(0.645)
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('ofrece Curva importada desde un preset e inicia con Ease In Out', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+
+    const firstX = [...document.querySelectorAll<HTMLButtonElement>(
+      '.k411-timeline-keyframe',
+    )].find((button) => button.title === 'x: 0.000s')
+    firstX?.click()
+    const interpolation = document.querySelector<HTMLButtonElement>(
+      '.k411-timeline-preset',
+    )
+    const menu = document.querySelector<HTMLElement>(
+      '.k411-timeline-preset-menu',
+    )
+    interpolation?.click()
+    menu?.querySelector<HTMLButtonElement>('[data-easing-option="linear"]')?.click()
+    interpolation?.click()
+    const imported = menu?.querySelector<HTMLButtonElement>(
+      '[data-easing-option="imported"]',
+    )
+    expect(imported?.disabled).toBe(false)
+    imported?.click()
+
+    const editor = document.querySelector<HTMLElement>('.k411-bezier-editor')
+    expect(editor?.hidden).toBe(false)
+    expect(
+      [...(editor?.querySelectorAll<HTMLInputElement>('[data-bezier-value]') ?? [])]
+        .map((input) => input.value),
+    ).toEqual(['0.42', '0', '0.58', '1'])
+    editor?.querySelector<HTMLButtonElement>('[data-bezier-apply]')?.click()
+    expect(interpolation?.dataset.easing).toBe('imported')
+    const track = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde
+    expect(track?.keyframes[0].handles.slice(2)).toEqual([0.42, 0])
+    expect(track?.keyframes[1].handles.slice(0, 2)).toEqual([0.58, 1])
+    expect(track?.keyframes[0].type).toBeUndefined()
 
     view.dispose()
     timeline.dispose()

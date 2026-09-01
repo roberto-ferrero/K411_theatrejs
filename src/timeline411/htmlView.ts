@@ -1,13 +1,22 @@
 import './timeline411.css'
+import {BezierCurveEditor} from './bezierEditor'
 import {TypedEventEmitter} from './events'
 import type {
-  EasingPreset,
+  CubicBezierHandles,
   KeyframeAddress,
   SerializableValue,
   TheatreBasicKeyframedTrack,
   TimelineDocument,
   TrackAddress,
 } from './model'
+import {
+  getEasingVisualDescriptor,
+  getKeyframeEasingVisual,
+  getSegmentEasingVisual,
+  isSelectableEasingPreset,
+  selectableEasingPresets,
+} from './easingVisuals'
+import type {EasingVisualDescriptor} from './easingVisuals'
 import type {TimelinePropertyRef} from './objectApi'
 import {isSerializableMap} from './paths'
 import {collectKeyframesInMarquee} from './marquee'
@@ -39,7 +48,6 @@ import {
   TimelineKeyframeSelection,
 } from './selection'
 import type {TimelineKeyframeSelectionSnapshot} from './selection'
-import {easingPresetPoints} from './store'
 import type {EditingGesture} from './store'
 import {Timeline411} from './timeline'
 import type {
@@ -60,6 +68,7 @@ const rowHeight = 28
 const rulerHeight = 30
 const minimumWidth = 640
 const minimumHeight = 240
+let easingPickerSequence = 0
 
 export interface Timeline411ViewEvents {
   'selection:change': TimelineKeyframeSelectionSnapshot
@@ -100,7 +109,14 @@ export class Timeline411HtmlView {
   private durationInput?: HTMLInputElement
   private keyframeTimeInput?: HTMLInputElement
   private keyframeContext?: HTMLElement
-  private interpolationSelect?: HTMLSelectElement
+  private interpolationPicker?: HTMLElement
+  private interpolationButton?: HTMLButtonElement
+  private interpolationEditButton?: HTMLButtonElement
+  private interpolationMenu?: HTMLElement
+  private curveEditor?: BezierCurveEditor
+  private curveEditorAddress?: KeyframeAddress
+  private interpolationVisual = getEasingVisualDescriptor('none')
+  private interpolationMenuOpen = false
   private resizeObserver?: ResizeObserver
   private readonly rowExpansionState = new TimelineRowExpansionState()
   private readonly keyframeSelection = new TimelineKeyframeSelection()
@@ -383,58 +399,106 @@ export class Timeline411HtmlView {
     this.keyframeTimeInput = keyframeTimeInput
 
     const undoButton = createToolbarButton('↶', 'Deshacer')
-    undoButton.addEventListener('click', () => this.timeline.store.undo())
+    undoButton.addEventListener('click', () => {
+      this.cancelCurveEditing(false)
+      this.timeline.store.undo()
+    })
     this.undoButton = undoButton
 
     const redoButton = createToolbarButton('↷', 'Rehacer')
-    redoButton.addEventListener('click', () => this.timeline.store.redo())
+    redoButton.addEventListener('click', () => {
+      this.cancelCurveEditing(false)
+      this.timeline.store.redo()
+    })
     this.redoButton = redoButton
 
-    const interpolation = document.createElement('select')
-    interpolation.className = 'k411-timeline-preset'
-    interpolation.setAttribute('aria-label', 'Interpolación del segmento')
-    const presets: Array<[string, string]> = [
-      ['none', 'Sin segmento'],
-      ['imported', 'Curva importada'],
-      ['linear', 'Linear'],
-      ['hold', 'Hold'],
-      ['ease', 'Ease'],
-      ['easeIn', 'Ease In'],
-      ['easeOut', 'Ease Out'],
-      ['easeInOut', 'Ease In Out'],
-    ]
-    for (const [value, label] of presets) {
-      const option = document.createElement('option')
-      option.value = value
-      option.textContent = label
-      if (value === 'none' || value === 'imported') option.disabled = true
-      interpolation.appendChild(option)
-    }
-    interpolation.disabled = true
-    interpolation.addEventListener('change', () => {
-      const preset = interpolation.value
+    const interpolationPicker = document.createElement('div')
+    interpolationPicker.className = 'k411-timeline-preset-picker'
+    const interpolationButton = document.createElement('button')
+    interpolationButton.type = 'button'
+    interpolationButton.className = 'k411-timeline-preset'
+    interpolationButton.setAttribute('aria-haspopup', 'listbox')
+    const interpolationMenu = document.createElement('div')
+    interpolationMenu.className = 'k411-timeline-preset-menu'
+    interpolationMenu.id = `k411-easing-listbox-${++easingPickerSequence}`
+    interpolationMenu.setAttribute('role', 'listbox')
+    interpolationMenu.setAttribute('aria-label', 'Interpolaciones disponibles')
+    interpolationMenu.hidden = true
+    interpolationButton.setAttribute('aria-controls', interpolationMenu.id)
+    interpolationButton.setAttribute('aria-expanded', 'false')
+    interpolationButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      if (this.interpolationMenuOpen) this.closeInterpolationMenu()
+      else this.openInterpolationMenu()
+    })
+    interpolationButton.addEventListener('keydown', (event) => {
+      event.stopPropagation()
       if (
-        this.keyframeSelection.size !== 1 ||
-        !this.selected ||
-        !isEasingPreset(preset)
+        event.key === 'ArrowDown' ||
+        event.key === 'ArrowUp' ||
+        event.key === 'Enter' ||
+        event.key === ' '
       ) {
-        this.updateInterpolationSelect()
+        event.preventDefault()
+        this.openInterpolationMenu(true, event.key === 'ArrowUp')
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        this.closeInterpolationMenu(true)
+      }
+    })
+    interpolationMenu.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      const options = Array.from(
+        interpolationMenu.querySelectorAll<HTMLButtonElement>(
+          '.k411-timeline-preset-option:not(:disabled)',
+        ),
+      )
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        this.closeInterpolationMenu(true)
         return
       }
-      try {
-        const selected = this.selected
-        this.timeline.editor.transaction(
-          (transaction) => {
-            transaction.setInterpolation(selected, preset)
-          },
-          {label: 'Cambiar interpolación'},
-        )
-      } catch (error) {
-        console.warn(error)
+      if (event.key === 'Tab') {
+        this.closeInterpolationMenu()
+        return
       }
-      this.updateInterpolationSelect()
+      const currentIndex = options.indexOf(document.activeElement as HTMLButtonElement)
+      let nextIndex: number | undefined
+      if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % options.length
+      else if (event.key === 'ArrowUp') {
+        nextIndex = (currentIndex - 1 + options.length) % options.length
+      } else if (event.key === 'Home') nextIndex = 0
+      else if (event.key === 'End') nextIndex = options.length - 1
+      if (typeof nextIndex === 'undefined' || options.length === 0) return
+      event.preventDefault()
+      options[nextIndex]?.focus({preventScroll: true})
     })
-    this.interpolationSelect = interpolation
+    const interpolationEditButton = document.createElement('button')
+    interpolationEditButton.type = 'button'
+    interpolationEditButton.className = 'k411-timeline-preset-edit'
+    interpolationEditButton.textContent = '[Edit]'
+    interpolationEditButton.title = 'Editar curva personalizada'
+    interpolationEditButton.hidden = true
+    interpolationEditButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      this.openCurveEditor()
+    })
+    const curveEditor = new BezierCurveEditor({
+      onChange: (handles) => this.previewCurveEditing(handles),
+      onApply: () => this.applyCurveEditing(),
+      onCancel: () => this.cancelCurveEditing(),
+    })
+    interpolationPicker.append(
+      interpolationButton,
+      interpolationEditButton,
+      interpolationMenu,
+      curveEditor.element,
+    )
+    this.interpolationPicker = interpolationPicker
+    this.interpolationButton = interpolationButton
+    this.interpolationEditButton = interpolationEditButton
+    this.interpolationMenu = interpolationMenu
+    this.curveEditor = curveEditor
 
     const keyframeContext = document.createElement('section')
     keyframeContext.className = 'k411-timeline-toolbar__keyframe-context'
@@ -443,11 +507,11 @@ export class Timeline411HtmlView {
     const keyframeContextTitle = document.createElement('strong')
     keyframeContextTitle.className = 'k411-timeline-toolbar__context-title'
     keyframeContextTitle.textContent = 'KF seleccionado:'
-    const interpolationLabel = document.createElement('label')
+    const interpolationLabel = document.createElement('div')
     interpolationLabel.className = 'k411-timeline-interpolation'
     const interpolationText = document.createElement('span')
     interpolationText.textContent = 'Interpolación:'
-    interpolationLabel.append(interpolationText, interpolation)
+    interpolationLabel.append(interpolationText, interpolationPicker)
     keyframeContext.append(
       keyframeContextTitle,
       keyframeTime,
@@ -455,7 +519,7 @@ export class Timeline411HtmlView {
     )
     this.keyframeContext = keyframeContext
     this.updateKeyframeTimeInput(true)
-    this.updateInterpolationSelect()
+    this.updateInterpolationPicker()
 
     const exportButton = createToolbarButton('JSON', 'Exportar animation.json')
     exportButton.classList.add('k411-timeline-toolbar__export')
@@ -474,7 +538,7 @@ export class Timeline411HtmlView {
     this.pruneInvalidKeyframeSelection()
     this.updateDurationInput()
     this.updateKeyframeTimeInput()
-    this.updateInterpolationSelect()
+    this.updateInterpolationPicker()
     const allRows = buildTimelineRows(this.timeline.document, this.sheetId)
     this.rowExpansionState.retain(
       allRows.filter(isTimelineRowCollapsible).map(({id}) => id),
@@ -573,7 +637,13 @@ export class Timeline411HtmlView {
           connector.setAttribute('y1', String(y + rowHeight / 2))
           connector.setAttribute('y2', String(y + rowHeight / 2))
           connector.classList.add('k411-timeline-connector')
-          if (!left.connectedRight || left.type === 'hold') {
+          const easingVisual = getSegmentEasingVisual(left, right)
+          connector.dataset.easing = easingVisual.id
+          connector.style.stroke = easingVisualColor(easingVisual)
+          if (easingVisual.dashArray) {
+            connector.setAttribute('stroke-dasharray', easingVisual.dashArray)
+          }
+          if (easingVisual.id === 'hold') {
             connector.classList.add('k411-timeline-connector--hold')
           }
           svg.appendChild(connector)
@@ -912,10 +982,23 @@ export class Timeline411HtmlView {
   }
 
   private readonly onDocumentClick = (event: MouseEvent): void => {
-    if (!this.propertyPickerObjectKey || !this.root) return
-    const target = event.target
+    if (!this.root) return
+    const target = event.target instanceof Element ? event.target : undefined
     if (
-      target instanceof Element &&
+      this.curveEditor?.open &&
+      (!target || !this.interpolationPicker?.contains(target))
+    ) {
+      this.cancelCurveEditing(false)
+    }
+    if (
+      this.interpolationMenuOpen &&
+      (!target || !this.interpolationPicker?.contains(target))
+    ) {
+      this.closeInterpolationMenu()
+    }
+    if (!this.propertyPickerObjectKey) return
+    if (
+      target &&
       this.root.contains(target) &&
       target.closest(
         '.k411-timeline-tree-row__property-add, .k411-timeline-tree-row__property-picker',
@@ -1020,7 +1103,8 @@ export class Timeline411HtmlView {
         'Selecciona un keyframe para editar su tiempo'
       if (this.keyframeContext) this.keyframeContext.hidden = true
       this.keyframeTimeInput.setCustomValidity('')
-      if (this.interpolationSelect) this.interpolationSelect.disabled = true
+      if (this.interpolationButton) this.interpolationButton.disabled = true
+      this.closeInterpolationMenu()
       return
     }
     if (this.keyframeContext) this.keyframeContext.hidden = false
@@ -1037,16 +1121,225 @@ export class Timeline411HtmlView {
     this.keyframeTimeInput.value = formatKeyframeTime(keyframe.position)
   }
 
-  private updateInterpolationSelect(): void {
-    if (!this.interpolationSelect) return
-    if (this.keyframeSelection.size !== 1 || !this.selected) {
-      this.interpolationSelect.value = 'none'
-      this.interpolationSelect.disabled = true
+  private updateInterpolationPicker(): void {
+    if (!this.interpolationButton || !this.interpolationMenu) return
+    const documentVisual =
+      this.keyframeSelection.size === 1 && this.selected
+        ? getKeyframeEasingVisual(this.timeline.document, this.selected)
+        : getEasingVisualDescriptor('none')
+    this.interpolationVisual =
+      this.curveEditor?.open &&
+      this.curveEditorAddress &&
+      this.selected &&
+      sameKeyframeAddress(this.curveEditorAddress, this.selected)
+        ? getEasingVisualDescriptor('imported', this.curveEditor.handles)
+        : documentVisual
+    this.interpolationButton.disabled = this.interpolationVisual.id === 'none'
+    this.closeInterpolationMenu()
+    this.renderInterpolationPicker()
+  }
+
+  private renderInterpolationPicker(): void {
+    if (!this.interpolationButton || !this.interpolationMenu) return
+    const visual = this.interpolationVisual
+    this.interpolationButton.dataset.easing = visual.id
+    this.interpolationButton.style.color = easingVisualColor(visual)
+    this.interpolationButton.setAttribute(
+      'aria-label',
+      `Interpolación del segmento: ${visual.label}`,
+    )
+    this.interpolationButton.title = visual.label
+    const label = document.createElement('span')
+    label.className = 'k411-timeline-preset__label'
+    label.textContent = visual.label
+    const chevron = document.createElement('span')
+    chevron.className = 'k411-timeline-preset__chevron'
+    chevron.textContent = '▾'
+    chevron.setAttribute('aria-hidden', 'true')
+    this.interpolationButton.replaceChildren(
+      createEasingPreview(visual),
+      label,
+      chevron,
+    )
+    if (this.interpolationEditButton) {
+      this.interpolationEditButton.hidden = visual.id !== 'imported'
+      this.interpolationEditButton.disabled = visual.id === 'none'
+    }
+
+    const optionVisuals: EasingVisualDescriptor[] = [
+      visual.id === 'imported'
+        ? visual
+        : getEasingVisualDescriptor('imported', [0.42, 0, 0.58, 1]),
+    ]
+    if (visual.id === 'none') optionVisuals.unshift(visual)
+    for (const preset of selectableEasingPresets) {
+      optionVisuals.push(getEasingVisualDescriptor(preset))
+    }
+    this.interpolationMenu.replaceChildren()
+    for (const optionVisual of optionVisuals) {
+      const option = document.createElement('button')
+      option.type = 'button'
+      option.className = 'k411-timeline-preset-option'
+      option.setAttribute('role', 'option')
+      option.dataset.easingOption = optionVisual.id
+      option.setAttribute(
+        'aria-selected',
+        String(optionVisual.id === visual.id),
+      )
+      option.style.color = easingVisualColor(optionVisual)
+      option.disabled = optionVisual.id === 'none'
+      option.setAttribute('aria-disabled', String(option.disabled))
+      const optionLabel = document.createElement('span')
+      optionLabel.className = 'k411-timeline-preset-option__label'
+      optionLabel.textContent = optionVisual.label
+      option.append(createEasingPreview(optionVisual), optionLabel)
+      if (isSelectableEasingPreset(optionVisual.id)) {
+        option.addEventListener('click', (event) => {
+          event.stopPropagation()
+          this.selectInterpolationPreset(optionVisual.id)
+        })
+      } else if (optionVisual.id === 'imported') {
+        option.addEventListener('click', (event) => {
+          event.stopPropagation()
+          this.openCurveEditor()
+        })
+      }
+      this.interpolationMenu.appendChild(option)
+    }
+  }
+
+  private openInterpolationMenu(focusOption = false, reverse = false): void {
+    if (
+      !this.interpolationButton ||
+      !this.interpolationMenu ||
+      this.interpolationButton.disabled
+    ) return
+    this.interpolationMenuOpen = true
+    this.interpolationMenu.hidden = false
+    this.interpolationButton.setAttribute('aria-expanded', 'true')
+    if (!focusOption) return
+    const options = Array.from(
+      this.interpolationMenu.querySelectorAll<HTMLButtonElement>(
+        '.k411-timeline-preset-option:not(:disabled)',
+      ),
+    )
+    const selected = options.find(
+      (option) => option.dataset.easingOption === this.interpolationVisual.id,
+    )
+    ;(selected ?? (reverse ? options.at(-1) : options[0]))?.focus({
+      preventScroll: true,
+    })
+  }
+
+  private closeInterpolationMenu(returnFocus = false): void {
+    this.interpolationMenuOpen = false
+    if (this.interpolationMenu) this.interpolationMenu.hidden = true
+    this.interpolationButton?.setAttribute('aria-expanded', 'false')
+    if (returnFocus) this.interpolationButton?.focus({preventScroll: true})
+  }
+
+  private selectInterpolationPreset(preset: string): void {
+    if (
+      this.keyframeSelection.size !== 1 ||
+      !this.selected ||
+      !isSelectableEasingPreset(preset)
+    ) {
+      this.updateInterpolationPicker()
       return
     }
-    const easing = getKeyframeEasing(this.timeline.document, this.selected)
-    this.interpolationSelect.value = easing
-    this.interpolationSelect.disabled = easing === 'none'
+    this.closeInterpolationMenu(true)
+    try {
+      const selected = this.selected
+      this.timeline.editor.transaction(
+        (transaction) => transaction.setInterpolation(selected, preset),
+        {label: 'Cambiar interpolación'},
+      )
+    } catch (error) {
+      console.warn(error)
+    }
+    this.updateInterpolationPicker()
+  }
+
+  private openCurveEditor(): void {
+    if (
+      !this.curveEditor ||
+      this.keyframeSelection.size !== 1 ||
+      !this.selected
+    ) return
+    const visual = getKeyframeEasingVisual(this.timeline.document, this.selected)
+    if (visual.id === 'none') return
+
+    this.closeInterpolationMenu()
+    this.cancelActiveGesture()
+    const address = {...this.selected}
+    const handles: CubicBezierHandles =
+      visual.id === 'imported' && visual.handles
+        ? visual.handles
+        : [0.42, 0, 0.58, 1]
+    this.curveEditorAddress = address
+    const gesture = this.timeline.store.beginGesture('Editar curva Bezier')
+    this.activeGesture = gesture
+    this.curveEditor.show(handles)
+    this.previewCurveEditing(handles)
+    this.renderInterpolationPicker()
+    this.positionCurveEditor()
+  }
+
+  private previewCurveEditing(handles: CubicBezierHandles): void {
+    if (
+      !this.curveEditorAddress ||
+      !this.activeGesture?.active
+    ) return
+    const address = this.curveEditorAddress
+    try {
+      this.activeGesture.update((transaction) => {
+        transaction.setBezierInterpolation(address, handles)
+      })
+    } catch (error) {
+      console.warn(error)
+      this.cancelCurveEditing(false)
+    }
+  }
+
+  private applyCurveEditing(): void {
+    const gesture = this.activeGesture
+    if (!this.curveEditor?.open || !gesture?.active) return
+    this.activeGesture = undefined
+    this.curveEditorAddress = undefined
+    this.curveEditor.hide()
+    gesture.commit()
+    this.updateInterpolationPicker()
+    this.interpolationButton?.focus({preventScroll: true})
+  }
+
+  private cancelCurveEditing(returnFocus = true): void {
+    if (!this.curveEditor?.open) return
+    const gesture = this.activeGesture
+    this.activeGesture = undefined
+    this.curveEditorAddress = undefined
+    this.curveEditor.hide()
+    if (gesture?.active) gesture.cancel()
+    this.updateInterpolationPicker()
+    if (returnFocus) this.interpolationButton?.focus({preventScroll: true})
+  }
+
+  private positionCurveEditor(): void {
+    if (!this.curveEditor?.open || !this.interpolationPicker || !this.root) return
+    const panel = this.curveEditor.element
+    panel.dataset.placement = 'right'
+    window.requestAnimationFrame(() => {
+      if (!this.curveEditor?.open || !this.interpolationPicker || !this.root) return
+      const rootRect = this.root.getBoundingClientRect()
+      const pickerRect = this.interpolationPicker.getBoundingClientRect()
+      const panelWidth = panel.offsetWidth || 280
+      if (rootRect.right - pickerRect.right >= panelWidth + 8) {
+        panel.dataset.placement = 'right'
+      } else if (pickerRect.left - rootRect.left >= panelWidth + 8) {
+        panel.dataset.placement = 'left'
+      } else {
+        panel.dataset.placement = 'below'
+      }
+    })
   }
 
   private commitKeyframeTimeInput(): boolean {
@@ -1451,6 +1744,17 @@ export class Timeline411HtmlView {
     mode: 'replace' | 'toggle' = 'replace',
     render = true,
   ): void {
+    if (
+      this.curveEditor?.open &&
+      (
+        mode === 'toggle' ||
+        !address ||
+        !this.curveEditorAddress ||
+        !sameKeyframeAddress(this.curveEditorAddress, address)
+      )
+    ) {
+      this.cancelCurveEditing(false)
+    }
     const changed = address && mode === 'toggle'
       ? this.keyframeSelection.toggle(address)
       : this.keyframeSelection.replace(address)
@@ -1458,16 +1762,23 @@ export class Timeline411HtmlView {
     if (render) this.render()
     else {
       this.updateKeyframeTimeInput(true)
-      this.updateInterpolationSelect()
+      this.updateInterpolationPicker()
     }
     this.root?.focus({preventScroll: true})
   }
 
   private makeKeyframePrimary(address: KeyframeAddress): void {
+    if (
+      this.curveEditor?.open &&
+      this.curveEditorAddress &&
+      !sameKeyframeAddress(this.curveEditorAddress, address)
+    ) {
+      this.cancelCurveEditing(false)
+    }
     if (!this.keyframeSelection.makePrimary(address)) return
     this.emitKeyframeSelectionChange()
     this.updateKeyframeTimeInput(true)
-    this.updateInterpolationSelect()
+    this.updateInterpolationPicker()
   }
 
   private pruneInvalidKeyframeSelection(): void {
@@ -1484,8 +1795,9 @@ export class Timeline411HtmlView {
   }
 
   private clearKeyframeSelectionFromSurface(): void {
+    this.cancelCurveEditing(false)
     if (!this.keyframeSelection.clear()) return
-    if (this.interpolationSelect) this.interpolationSelect.disabled = true
+    if (this.interpolationButton) this.interpolationButton.disabled = true
     this.surface
       ?.querySelectorAll('.k411-timeline-keyframe--selected, .k411-timeline-keyframe--primary')
       .forEach((element) => {
@@ -1496,7 +1808,7 @@ export class Timeline411HtmlView {
         element.setAttribute('aria-pressed', 'false')
       })
     this.updateKeyframeTimeInput(true)
-    this.updateInterpolationSelect()
+    this.updateInterpolationPicker()
     this.emitKeyframeSelectionChange()
     this.root?.focus({preventScroll: true})
   }
@@ -2081,6 +2393,7 @@ export class Timeline411HtmlView {
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
       event.preventDefault()
+      this.cancelCurveEditing(false)
       if (event.shiftKey) this.timeline.store.redo()
       else this.timeline.store.undo()
     }
@@ -2093,6 +2406,10 @@ export class Timeline411HtmlView {
   }
 
   private cancelActiveGesture(): void {
+    if (this.curveEditor?.open) {
+      this.cancelCurveEditing()
+      return
+    }
     if (this.cancelPointerInteraction) this.cancelPointerInteraction()
     else if (this.activeGesture?.active) this.activeGesture.cancel()
     this.cancelPointerInteraction = undefined
@@ -2328,40 +2645,35 @@ function findKeyframe(document: TimelineDocument, address: KeyframeAddress) {
   )
 }
 
-type KeyframeEasingDisplay = EasingPreset | 'imported' | 'none'
-
-function getKeyframeEasing(
-  document: TimelineDocument,
-  address: KeyframeAddress,
-): KeyframeEasingDisplay {
-  const track = document.sheetsById[address.sheetId]?.sequence?.tracksByObject[
-    address.objectKey
-  ]?.trackData[address.trackId]
-  const index = track?.keyframes.findIndex(
-    (keyframe) => keyframe.id === address.keyframeId,
-  ) ?? -1
-  if (!track || index < 0 || index >= track.keyframes.length - 1) return 'none'
-
-  const left = track.keyframes[index]
-  const right = track.keyframes[index + 1]
-  if (!left.connectedRight || left.type === 'hold') return 'hold'
-  const points = [
-    left.handles[2],
-    left.handles[3],
-    right.handles[0],
-    right.handles[1],
-  ]
-  for (const [preset, expected] of Object.entries(easingPresetPoints)) {
-    if (points.every((point, pointIndex) => Math.abs(point - expected[pointIndex]) < 1e-6)) {
-      return preset as Exclude<EasingPreset, 'hold'>
-    }
-  }
-  return 'imported'
+function easingVisualColor(visual: EasingVisualDescriptor): string {
+  return `var(${visual.cssVariable}, ${visual.color})`
 }
 
-function isEasingPreset(value: string): value is EasingPreset {
-  return (
-    value === 'hold' ||
-    Object.prototype.hasOwnProperty.call(easingPresetPoints, value)
-  )
+function createEasingPreview(
+  visual: EasingVisualDescriptor,
+): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.classList.add('k411-easing-preview')
+  svg.dataset.easingPreview = visual.id
+  svg.setAttribute('viewBox', '0 0 32 14')
+  svg.setAttribute('width', '32')
+  svg.setAttribute('height', '14')
+  svg.setAttribute('aria-hidden', 'true')
+  if (visual.kind === 'none') return svg
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  if (visual.kind === 'hold') {
+    path.setAttribute('d', 'M2 12 H27 V2 H30')
+  } else {
+    const [x1, y1, x2, y2] = visual.handles ?? [0, 0, 1, 1]
+    path.setAttribute(
+      'd',
+      `M2 12 C${2 + x1 * 28} ${12 - y1 * 10} ${2 + x2 * 28} ${12 - y2 * 10} 30 2`,
+    )
+  }
+  if (visual.dashArray) {
+    path.setAttribute('stroke-dasharray', visual.dashArray)
+  }
+  svg.appendChild(path)
+  return svg
 }

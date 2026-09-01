@@ -481,11 +481,18 @@ Bloque contextual enmarcado de la toolbar que sólo aparece cuando existe un
 segmento saliente. El resto de la toolbar conserva por separado los controles
 básicos y las acciones globales.
 
-El easing se presenta como preset cuando sus handles coinciden, como
-`Curva importada` cuando el JSON contiene una curva sin preset y como
+El easing se presenta como preset cuando fue elegido explícitamente y sus
+handles coinciden, como `Curva importada` cuando el JSON conserva una curva
+personalizada con `type` omitido o con handles sin preset, y como
 `Sin segmento` para el último keyframe, donde el selector queda deshabilitado.
 Los segmentos nuevos son `Linear` por defecto. Una curva importada permanece
 intacta hasta que el usuario escoge explícitamente un preset que la sustituye.
+
+Cuando el segmento es personalizado aparece `[Edit]` a la derecha del selector.
+Además, `Curva importada` es una opción seleccionable desde cualquier preset:
+crea una curva personalizada inicialmente idéntica a `Ease In Out` y abre su
+editor. El panel se ancla a la derecha del selector y se recoloca a la izquierda
+o debajo si el espacio disponible no es suficiente.
 
 ### Keyframe Value
 
@@ -609,6 +616,45 @@ prop.
 
 Transformación del progreso temporal para producir aceleración, desaceleración u
 otro comportamiento. No calcula por sí mismo el valor final.
+
+### Easing Visual Descriptor / Descriptor visual de easing
+
+Metadatos derivados que asignan a cada easing una etiqueta, color, patrón de
+línea y, cuando corresponde, handles Bezier. Permiten que el selector, los
+conectores HTML/SVG y una futura vista WebGL compartan el mismo código visual sin
+incorporarlo al documento de animación.
+
+| Easing | Color | Forma adicional |
+|---|---|---|
+| `Linear` | Gris `#A7B0BE` | Recta continua |
+| `Hold` | Ámbar `#F2B84B` | Escalón y línea discontinua |
+| `Ease` | Azul `#5DA9FF` | Curva suave |
+| `Ease In` | Violeta `#A78BFA` | Curva de aceleración |
+| `Ease Out` | Turquesa `#43D3B0` | Curva de desaceleración |
+| `Ease In Out` | Magenta `#F078C8` | Curva en S |
+| `Curva importada` | Coral `#FF8A65` | Handles reales y punto-raya |
+| `Sin segmento` | Gris oscuro `#667085` | Sin línea |
+
+El color nunca es el único indicador: el listbox conserva el nombre y una
+muestra geométrica; `Hold` e imported incorporan además patrones distintos. Los
+keyframes mantienen su color de interacción y los conectores agregados siguen en
+gris porque pueden resumir segmentos con easings diferentes.
+
+### Easing Preview / Muestra de easing
+
+Miniatura SVG incluida en el botón contextual y en cada opción del listbox. Para
+los presets representa sus handles conocidos; para `Curva importada` dibuja los
+handles leídos del JSON. Es una representación de vista, no una curva adicional
+almacenada en el modelo.
+
+### Custom / Imported Curve
+
+Curva Bezier que utiliza los cuatro `handles` compatibles con Theatre.js y no
+queda vinculada a un preset. Timeline 411 conserva omitido `type` en el keyframe
+izquierdo, como ocurre en el JSON original, mientras que una selección explícita
+de preset usa `type: "bezier"`. Esto permite conservar la identidad personalizada
+incluso cuando sus handles son exactamente los de `Ease In Out`, sin añadir un
+campo propio al ProjectState.
 
 ### Linear Progress
 
@@ -783,6 +829,32 @@ renderer WebGL.
 ### Curve Editor
 
 Interfaz donde se modifican gráficamente los handles de un segmento.
+
+En Timeline 411 es un popover contextual con una curva cúbica entre `(0, 0)` y
+`(1, 1)`, dos handles arrastrables y campos numéricos `x1`, `y1`, `x2`, `y2`.
+Los controles X están limitados al intervalo `[0, 1]` para mantener una función
+temporal resoluble. Y admite undershoot y overshoot; el gráfico muestra como
+mínimo el rango `[-1, 2]` y se amplía cuando una curva importada lo necesita.
+
+La curva pertenece al segmento saliente del keyframe seleccionado. Por ello, el
+editor modifica conjuntamente:
+
+- `selected.handles[2]` y `selected.handles[3]`, control de salida P1.
+- `next.handles[0]` y `next.handles[1]`, control de entrada P2.
+
+La previsualización utiliza un gesto reversible y actualiza evaluación, bindings
+y conectores sin incrementar todavía la revisión. `Aplicar` consolida el gesto
+como una única entrada de undo. `Cancelar`, `Escape`, `X` o un clic exterior
+restauran el documento previo. El último keyframe no ofrece editor porque carece
+de segmento saliente.
+
+La operación renderer-neutral equivalente es:
+
+```ts
+timeline.editor.transaction((tx) => {
+  tx.setBezierInterpolation(keyframe, [x1, y1, x2, y2])
+}, {label: 'Editar curva Bezier'})
+```
 
 ## 8. Evaluación
 
@@ -1337,7 +1409,8 @@ pendientes y tangentes.
 ### Curve Editor
 
 Editor especializado en la curva de easing de un segmento. Puede integrarse en
-el graph editor o mostrarse en un popover.
+el graph editor o mostrarse en un popover. Timeline 411 implementa actualmente
+la segunda variante, anclada al selector de interpolación.
 
 ### Ruler
 

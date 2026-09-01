@@ -1,4 +1,5 @@
 export * from './easing'
+export * from './easingVisuals'
 export * from './editor'
 export * from './evaluator'
 export * from './htmlView'

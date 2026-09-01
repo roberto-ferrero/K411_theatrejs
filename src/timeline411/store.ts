@@ -1,4 +1,5 @@
 import type {
+  CubicBezierHandles,
   EasingPreset,
   KeyframeAddress,
   ObjectAddress,
@@ -68,6 +69,10 @@ export interface TimelineTransaction {
   updateKeyframe(address: KeyframeAddress, patch: KeyframePatch): void
   removeKeyframe(address: KeyframeAddress): void
   setInterpolation(address: KeyframeAddress, preset: EasingPreset): void
+  setBezierInterpolation(
+    address: KeyframeAddress,
+    handles: CubicBezierHandles,
+  ): void
   setLength(sheetId: string, length: number): void
   setFps(sheetId: string, fps: number): void
 }
@@ -487,6 +492,30 @@ class TimelineTransactionImplementation implements TimelineTransaction {
     right.handles[1] = points[3]
   }
 
+  setBezierInterpolation(
+    address: KeyframeAddress,
+    handles: CubicBezierHandles,
+  ): void {
+    assertCubicBezierHandles(handles)
+    const track = getTrack(this.draft, address)
+    const index = track.keyframes.findIndex(
+      (keyframe) => keyframe.id === address.keyframeId,
+    )
+    if (index === -1) throw new Error(`Keyframe desconocido: ${address.keyframeId}`)
+    const left = track.keyframes[index]
+    const right = track.keyframes[index + 1]
+    if (!right) throw new Error('El último keyframe no tiene segmento de salida')
+
+    // Theatre.js acepta la curva con el tipo omitido. Conservamos esa forma
+    // para distinguir una curva personalizada de un preset matemáticamente igual.
+    delete left.type
+    left.connectedRight = true
+    left.handles[2] = handles[0]
+    left.handles[3] = handles[1]
+    right.handles[0] = handles[2]
+    right.handles[1] = handles[3]
+  }
+
   setLength(sheetId: string, length: number): void {
     if (!Number.isFinite(length) || length <= 0) {
       throw new Error('La duración debe ser mayor que cero')
@@ -515,6 +544,18 @@ export const easingPresetPoints: Record<
   easeIn: [0.42, 0, 1, 1],
   easeOut: [0, 0, 0.58, 1],
   easeInOut: [0.42, 0, 0.58, 1],
+}
+
+function assertCubicBezierHandles(handles: CubicBezierHandles): void {
+  if (
+    handles.length !== 4 ||
+    handles.some((value) => !Number.isFinite(value))
+  ) {
+    throw new Error('La curva Bezier necesita cuatro valores finitos')
+  }
+  if (handles[0] < 0 || handles[0] > 1 || handles[2] < 0 || handles[2] > 1) {
+    throw new Error('Los controles temporales x1 y x2 deben estar entre 0 y 1')
+  }
 }
 
 function getTrack(

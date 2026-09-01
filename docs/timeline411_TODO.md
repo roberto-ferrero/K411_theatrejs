@@ -230,8 +230,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    interpolación del segmento saliente.
 5. El selector de interpolación muestra siempre el estado efectivo: un preset,
    `Curva importada` o `Sin segmento`.
-6. `Curva importada` identifica handles procedentes del JSON que no coinciden
-   con ningún preset. Es informativo y no ofrece edición manual de handles.
+6. `Curva importada` identifica handles personalizados del JSON y permite
+   editarlos mediante un editor gráfico de curva cúbica.
 7. En el último keyframe se muestra `Sin segmento` y el selector queda
    deshabilitado porque no existe un segmento saliente.
 8. La selección múltiple no muestra este bloque; sólo la selección de un único
@@ -240,6 +240,38 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    como interpolación predeterminada.
 10. Las curvas importadas se conservan intactas hasta que el usuario selecciona
     explícitamente un preset que las reemplaza.
+11. El selector nativo se sustituye por un listbox accesible que muestra nombre,
+    color y una curva SVG de ejemplo para cada interpolación.
+12. La paleta acordada es: `Linear` gris, `Hold` ámbar, `Ease` azul,
+    `Ease In` violeta, `Ease Out` turquesa, `Ease In Out` magenta y
+    `Curva importada` coral. `Sin segmento` usa gris oscuro y no dibuja curva.
+13. El color no es el único indicador: `Hold` usa una muestra escalonada y línea
+    discontinua; `Curva importada` representa sus handles reales y usa patrón
+    punto-raya.
+14. Los conectores de tracks adoptan el color y patrón del easing saliente. Los
+    keyframes conservan el amarillo y los conectores agregados permanecen grises.
+15. El listbox admite apertura con clic, `Enter`, espacio o flechas; navegación
+    con flechas, `Home`/`End`; y cierre mediante `Escape`, `Tab` o clic exterior.
+16. `EasingVisualDescriptor` centraliza identificador, etiqueta, color, patrón y
+    handles fuera del renderer para que HTML y WebGL compartan la semántica.
+17. La identidad visual es estado derivado y configurable mediante variables
+    CSS en HTML; no añade datos a `animation.json`.
+18. `[Edit]` aparece junto al selector cuando el segmento es una curva
+    importada. La opción `Curva importada` permanece disponible desde cualquier
+    preset y crea una curva personalizada inicialmente idéntica a `Ease In Out`.
+19. El editor se abre como popover a la derecha del selector; si no hay espacio,
+    se recoloca a la izquierda o debajo sin cambiar el layout del timeline.
+20. El gráfico edita `x1`, `y1`, `x2`, `y2` con dos handles. X se restringe a
+    `[0, 1]`; el lienzo deja margen vertical inicial `[-1, 2]` y se expande para
+    representar valores importados fuera de ese rango.
+21. Los campos numéricos permiten precisión directa y valores Y negativos. Los
+    handles también admiten flechas y `Shift` para un incremento diez veces mayor.
+22. La previsualización modifica temporalmente el documento y los bindings.
+    `Aplicar` consolida una sola entrada de undo; `Cancelar`, `Escape`, `X` o clic
+    exterior restauran el documento anterior.
+23. Una curva personalizada mantiene omitido `type` como en el JSON original de
+    Theatre.js; los presets explícitos usan `type: "bezier"`. Esto permite
+    distinguir una curva personalizada idéntica a un preset sin añadir campos.
 
 ### Decisiones de alta y baja desde una propiedad
 
@@ -389,6 +421,12 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
       `Deshacer`/`Rehacer`/`JSON` alineadas a la derecha.
 - [x] Easing efectivo siempre visible con presets, `Curva importada` y
       `Sin segmento` para el último keyframe.
+- [x] Código visual de easing con paleta, muestras SVG, listbox accesible y
+      conectores coloreados; `Hold` discontinuo e imported punto-raya.
+- [x] Editor gráfico de curva cúbica con dos handles, campos numéricos, margen
+      negativo, preview, aplicar/cancelar y una sola entrada de undo.
+- [x] Opción `Curva importada` seleccionable desde presets con base `Ease In Out`
+      y botón contextual `[Edit]` para curvas personalizadas.
 - [x] `Linear` como easing predeterminado de segmentos nuevos, sin modificar
       curvas importadas hasta una elección explícita.
 - [x] Rombo `◇/◆` por propiedad para añadir o quitar un keyframe en el playhead.
@@ -446,7 +484,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Evento `object:configuration` para refrescar vistas cuando cambia un
       catálogo o schema runtime.
 
-La suite actual contiene 70 pruebas. `npm test` y
+La suite actual contiene 77 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -483,7 +521,7 @@ La suite actual contiene 70 pruebas. `npm test` y
 - [x] Editor inline de valor para keyframes y static overrides.
 - [x] Value scrubbing numérico con `nudgeMultiplier`, `range`, Shift y Ctrl/Cmd.
 - [x] Editor inline de tiempo del keyframe.
-- [ ] Curve Editor emergente con handles manuales.
+- [x] Curve Editor emergente con handles manuales y campos `x1/y1/x2/y2`.
 - [ ] Graph Editor redimensionable.
 - [ ] Curvas escalares y representación de valores no escalares.
 - [ ] Selección sincronizada entre Dope Sheet y Graph Editor.

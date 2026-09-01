@@ -9,7 +9,17 @@ describe('compatibilidad Theatre.js 0.7.2', () => {
     const timeline = new Timeline411(projectState)
     timeline.store.transaction('Editar antes de exportar', (transaction) => {
       transaction.setLength('Animated scene', 4)
+      transaction.setBezierInterpolation({
+        sheetId: 'Animated scene',
+        objectKey: 'Torus Knot',
+        trackId: 'Q9IUK1iBde',
+        keyframeId: 'CFjUByQoGL',
+      }, [0.2, -0.4, 0.75, 1.35])
     })
+    const expectedMidpoint = timeline.evaluate(
+      'Animated scene',
+      1.5,
+    ).objects['Torus Knot'].rotation
     const exportedState = JSON.parse(timeline.stringify())
 
     const project = getProject(`K411-${Date.now().toString(36)}`, {
@@ -26,6 +36,10 @@ describe('compatibilidad Theatre.js 0.7.2', () => {
     })
 
     await project.ready
+    sheet.sequence.position = 1.5
+    expect(object.value.rotation.x).toBeCloseTo(
+      (expectedMidpoint as {x: number}).x,
+    )
     sheet.sequence.position = 3
 
     expect(val(sheet.sequence.pointer.length)).toBe(4)

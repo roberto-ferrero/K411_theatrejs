@@ -1,4 +1,5 @@
 import type {
+  CubicBezierHandles,
   EasingPreset,
   KeyframeAddress,
   ObjectAddress,
@@ -342,6 +343,18 @@ export class TimelineEditorTransaction {
     const address =
       keyframe instanceof TimelineKeyframe ? keyframe.address : keyframe
     this.transaction.setInterpolation(address, preset)
+  }
+
+  setBezierInterpolation(
+    keyframe: TimelineKeyframe | KeyframeAddress,
+    handles: CubicBezierHandles,
+  ): void {
+    if (keyframe instanceof TimelineKeyframe) {
+      assertTrackBelongsToTimeline(this.timeline, keyframe.track)
+    }
+    const address =
+      keyframe instanceof TimelineKeyframe ? keyframe.address : keyframe
+    this.transaction.setBezierInterpolation(address, handles)
   }
 
   setDuration(sheetId: string, duration: number): void {

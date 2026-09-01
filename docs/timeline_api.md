@@ -153,11 +153,58 @@ mueve el playhead al nuevo tiempo. Mover el playhead por separado no elimina la
 selección. Sin selección, el bloque contextual se oculta completamente.
 
 El selector contextual muestra siempre el easing saliente efectivo: `Linear`,
-`Hold`, `Ease`, `Ease In`, `Ease Out` o `Ease In Out`. Los segmentos nuevos usan
-`Linear` de forma predeterminada. Cuando unos handles importados no coinciden con
-un preset, muestra `Curva importada` como estado informativo; elegir un preset
-los reemplaza, pero mientras tanto el JSON se conserva intacto. Para el último
-keyframe muestra `Sin segmento` y queda deshabilitado.
+`Hold`, `Ease`, `Ease In`, `Ease Out`, `Ease In Out` o `Curva importada`. Los
+segmentos nuevos usan `Linear` de forma predeterminada. Una curva personalizada
+se puede editar con `[Edit]`; desde cualquier preset, elegir `Curva importada`
+abre el editor con una copia inicial de `Ease In Out`. Para el último keyframe
+muestra `Sin segmento` y queda deshabilitado.
+
+El control es un listbox accesible propio, no un `<select>` nativo. El botón y
+cada opción combinan el nombre tintado con una curva SVG: `Linear` gris, `Hold`
+ámbar, `Ease` azul, `Ease In` violeta, `Ease Out` turquesa, `Ease In Out`
+magenta y `Curva importada` coral. Esta última representa los handles reales.
+Admite clic, `Enter`, espacio, flechas, `Home`, `End`, `Escape`, `Tab` y cierre
+exterior. Los conectores de track usan la misma identidad visual; `Hold` es
+discontinuo e imported usa punto-raya. Keyframes y agregados mantienen sus
+colores actuales.
+
+La clasificación y la paleta se exponen fuera del renderer:
+
+```ts
+type EasingDisplayId = EasingPreset | 'imported' | 'none'
+
+interface EasingVisualDescriptor {
+  readonly id: EasingDisplayId
+  readonly label: string
+  readonly color: string
+  readonly cssVariable: string
+  readonly kind: 'bezier' | 'hold' | 'none'
+  readonly handles?: readonly [number, number, number, number]
+  readonly dashArray?: string
+}
+
+getEasingVisualDescriptor(id, importedHandles?): EasingVisualDescriptor
+getSegmentEasingVisual(left, right): EasingVisualDescriptor
+getKeyframeEasingVisual(document, address): EasingVisualDescriptor
+```
+
+WebGL puede consumir el color, patrón y handles sin depender de SVG o CSS. La
+vista HTML permite tematizar los colores mediante variables `--k411-easing-*`.
+Nada de esta representación se serializa en el ProjectState de Theatre.js.
+
+El editor de curva es un popover anclado a la derecha del selector, con fallback
+a izquierda o debajo. Expone dos handles gráficos y campos `x1`, `y1`, `x2`,
+`y2`. X queda limitado a `[0, 1]`; Y puede ser negativo o superar `1`. El gráfico
+parte del rango vertical `[-1, 2]` y se amplía para curvas importadas que lo
+excedan. Los cambios se previsualizan mediante un gesto del store: `Aplicar`
+crea como máximo una entrada de undo y `Cancelar`, `Escape`, `X` o clic exterior
+restauran el documento anterior.
+
+Una curva personalizada se exporta usando únicamente los `handles` nativos de
+Theatre.js. Timeline 411 mantiene omitido `type` en el keyframe izquierdo, igual
+que el JSON original; los presets elegidos explícitamente usan
+`type: "bezier"`. Así una curva personalizada puede ser idéntica a un preset sin
+añadir metadatos privados al JSON.
 
 Cada fila de propiedad primitiva incluye un rombo `◇/◆` para añadir o quitar un
 keyframe en el playhead. El doble clic sobre la lane aplica la misma operación en
@@ -924,12 +971,22 @@ interface TimelineTransaction {
     keyframe: KeyframeHandle | KeyframeAddress,
     preset: 'linear' | 'hold' | 'ease' | 'easeIn' | 'easeOut' | 'easeInOut',
   ): void
+  setBezierInterpolation(
+    keyframe: KeyframeHandle | KeyframeAddress,
+    handles: readonly [x1: number, y1: number, x2: number, y2: number],
+  ): void
 
   forgetObject(object: TimelineObject | ObjectAddress): void
   setDuration(sheetId: string, duration: number): void
   setFps(sheetId: string, fps: number): void
 }
 ```
+
+`setBezierInterpolation()` modifica atómicamente el handle saliente del
+keyframe indicado y el handle entrante del siguiente. Rechaza el último
+keyframe, exige cuatro números finitos y restringe `x1` y `x2` a `[0, 1]`; Y no
+se limita para permitir undershoot y overshoot. La operación conserva el modelo
+Theatre.js 0.7.2 y no crea un tipo de curva exclusivo de Timeline 411.
 
 ### Semántica de `set(property, value)`
 
@@ -970,7 +1027,8 @@ ignorar historial permanecen como evolución futura.
 
 Crea una transacción temporal de bajo nivel para drag, resize, edición de
 handles o value scrubbing. La vista HTML ya la utiliza para el scrubber
-numérico. Su traslado a `timeline.editor.beginGesture()` está pendiente.
+numérico, el movimiento de keyframes y el editor de curvas. Su traslado a
+`timeline.editor.beginGesture()` está pendiente.
 
 ```ts
 interface EditingGesture {
