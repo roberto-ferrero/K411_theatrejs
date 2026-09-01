@@ -192,6 +192,13 @@ keyframes agregados. El estado anidado se conserva al cerrar y abrir un objeto,
 es independiente para cada vista y no modifica `animation.json`. El criterio es
 jerárquico y funciona con cualquier compound prop, no sólo con propiedades XYZ.
 
+Las filas de objeto y grupo también muestran conectores agregados grises. La
+función renderer-neutral `collectRowConnectorIntervals(document, sheetId, row)`
+calcula la unión de los segmentos de todos los tracks descendientes: fusiona
+solapamientos, conserva los huecos y evita conectar keyframes agregados que no
+pertenecen a un mismo intervalo animado. HTML sólo dibuja los intervalos y no les
+asigna interacción; una futura vista WebGL puede consumir el mismo resultado.
+
 La fila de un objeto con catálogo dispone de un botón `+`. Al abrirlo muestra
 únicamente properties disponibles y las agrupa por category. Elegir una crea el
 static override con el valor actual del objeto anfitrión; una compound prop crea

@@ -170,6 +170,14 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
    `animation.json`. Tampoco elimina selecciones de keyframes ocultos.
 9. El botón expone `aria-expanded`, conserva el foco tras el rerender y utiliza
    `▾` para desplegado y `▸` para plegado.
+10. Las filas de objeto y grupo compuesto muestran conectores agregados grises
+    calculados a partir de todos sus tracks descendientes, estén plegadas o no.
+11. El agregado es la unión de los intervalos realmente conectados: los tramos
+    solapados se fusionan, pero los huecos entre tracks se conservan y nunca se
+    dibuja una conexión inexistente entre dos keyframes agregados consecutivos.
+12. `collectRowConnectorIntervals()` realiza el cálculo fuera del renderer. Las
+    líneas HTML son informativas, no participan en hit testing y no añaden estado
+    al JSON de Theatre.js.
 
 ### Decisiones de edición de duración
 
@@ -392,6 +400,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
       completo en `selections`.
 - [x] Árbol plegable para objetos y grupos compuestos, con lanes filtradas y
       estado anidado independiente por vista.
+- [x] Conectores agregados grises para objetos y grupos, con unión
+      renderer-neutral de los intervalos descendientes y conservación de huecos.
 - [x] Botón `+` y selector agrupado para activar properties desde la fila del
       objeto, sin duplicar las que ya están en el timeline.
 - [x] Cierre cancelable del selector mediante `×`, `Escape` o clic exterior,
@@ -426,7 +436,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Evento `object:configuration` para refrescar vistas cuando cambia un
       catálogo o schema runtime.
 
-La suite actual contiene 68 pruebas. `npm test` y
+La suite actual contiene 69 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks

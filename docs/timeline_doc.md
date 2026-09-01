@@ -552,6 +552,24 @@ rotation.z   ●──────────────●
 El aggregate keyframe pertenece al view model. No tiene por qué existir en el
 documento persistente.
 
+### Aggregate Connector / Conector agregado
+
+Línea gris informativa que resume en la fila de un objeto o grupo compuesto los
+segmentos existentes en todos sus tracks descendientes. No se obtiene conectando
+simplemente todos los aggregate keyframes consecutivos, porque eso podría crear
+animación visual en un hueco donde ningún track tiene un segmento.
+
+Timeline 411 calcula la unión temporal de los conectores descendientes: fusiona
+los intervalos solapados o contiguos y conserva separados los intervalos entre
+los que existe un hueco. El resultado pertenece al view model, es
+renderer-neutral, no es interactivo y no se persiste en `animation.json`.
+
+```text
+track A     ●──────●
+track B        ●────────●       ●────●
+aggregate  ◆────────────◆       ◆────◆
+```
+
 ### Keyframe Group
 
 Conjunto de keyframes seleccionado y editado como una unidad. Puede abarcar

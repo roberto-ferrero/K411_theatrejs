@@ -19,6 +19,7 @@ import type {
 } from './propertyCatalog'
 import {
   buildTimelineRows,
+  collectRowConnectorIntervals,
   collectRowKeyframes,
   createViewportGridTicks,
   projectTimelineRowValue,
@@ -573,6 +574,32 @@ export class Timeline411HtmlView {
           if (!left.connectedRight || left.type === 'hold') {
             connector.classList.add('k411-timeline-connector--hold')
           }
+          svg.appendChild(connector)
+        }
+      } else {
+        for (const interval of collectRowConnectorIntervals(
+          this.timeline.document,
+          this.sheetId,
+          row,
+        )) {
+          const connector = document.createElementNS(
+            'http://www.w3.org/2000/svg',
+            'line',
+          )
+          connector.setAttribute(
+            'x1',
+            String(timeToViewportSurfaceX(interval.start, viewport)),
+          )
+          connector.setAttribute(
+            'x2',
+            String(timeToViewportSurfaceX(interval.end, viewport)),
+          )
+          connector.setAttribute('y1', String(y + rowHeight / 2))
+          connector.setAttribute('y2', String(y + rowHeight / 2))
+          connector.classList.add(
+            'k411-timeline-connector',
+            'k411-timeline-connector--aggregate',
+          )
           svg.appendChild(connector)
         }
       }

@@ -65,6 +65,9 @@ describe('vista Timeline 411 HTML', () => {
     ])
     expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(6)
     expect(
+      document.querySelectorAll('.k411-timeline-connector--aggregate'),
+    ).toHaveLength(2)
+    expect(
       findPropertyRow('wireframe').querySelector(
         '.k411-timeline-tree-row__disclosure',
       ),
@@ -74,16 +77,25 @@ describe('vista Timeline 411 HTML', () => {
     expect(visibleLabels()).toEqual(['Torus Knot', 'rotation', 'wireframe'])
     expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(3)
     expect(document.querySelectorAll('.k411-timeline-keyframe--aggregate')).toHaveLength(4)
+    expect(
+      document.querySelectorAll('.k411-timeline-connector--aggregate'),
+    ).toHaveLength(2)
 
     disclosure('Colapsar objeto Torus Knot')?.click()
     expect(visibleLabels()).toEqual(['Torus Knot'])
     expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(1)
+    expect(
+      document.querySelectorAll('.k411-timeline-connector--aggregate'),
+    ).toHaveLength(1)
 
     disclosure('Desplegar objeto Torus Knot')?.click()
     expect(visibleLabels()).toEqual(['Torus Knot', 'rotation', 'wireframe'])
     expect(view.rowExpansion.collapsedRowIds).toEqual([
       'Torus Knot:["rotation"]',
     ])
+    expect(
+      document.querySelectorAll('.k411-timeline-connector--aggregate'),
+    ).toHaveLength(2)
 
     disclosure('Desplegar grupo rotation')?.click()
     expect(visibleLabels()).toEqual([

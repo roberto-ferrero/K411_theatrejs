@@ -41,6 +41,11 @@ export interface TimelineRowValueProjection {
   readonly keyframe?: KeyframeAddress
 }
 
+export interface TimelineConnectorInterval {
+  readonly start: number
+  readonly end: number
+}
+
 interface MutableRowNode {
   label: string
   objectKey: string
@@ -109,6 +114,42 @@ export function collectRowKeyframes(
     }
   }
   return [...byPosition.values()].sort((left, right) => left.position - right.position)
+}
+
+export function collectRowConnectorIntervals(
+  document: TimelineDocument,
+  sheetId: string,
+  row: TimelineRow,
+): readonly TimelineConnectorInterval[] {
+  const tracks =
+    document.sheetsById[sheetId]?.sequence?.tracksByObject[row.objectKey]
+      ?.trackData
+  if (!tracks) return []
+
+  const intervals: TimelineConnectorInterval[] = []
+  const trackIds = row.trackId ? [row.trackId] : row.trackIds
+  for (const trackId of trackIds) {
+    const keyframes = tracks[trackId]?.keyframes ?? []
+    for (let index = 0; index < keyframes.length - 1; index += 1) {
+      const start = keyframes[index].position
+      const end = keyframes[index + 1].position
+      if (end > start) intervals.push({start, end})
+    }
+  }
+  intervals.sort((left, right) => left.start - right.start || left.end - right.end)
+
+  const union: TimelineConnectorInterval[] = []
+  for (const interval of intervals) {
+    const previous = union[union.length - 1]
+    if (!previous || interval.start > previous.end) {
+      union.push({...interval})
+      continue
+    }
+    if (interval.end > previous.end) {
+      union[union.length - 1] = {start: previous.start, end: interval.end}
+    }
+  }
+  return union
 }
 
 export function projectTimelineRowValue(

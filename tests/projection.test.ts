@@ -3,6 +3,7 @@ import projectState from '../src/state.json'
 import {evaluateSheet} from '../src/timeline411/evaluator'
 import {
   buildTimelineRows,
+  collectRowConnectorIntervals,
   createViewportGridTicks,
   projectTimelineRowValue,
   snapToFrame,
@@ -29,6 +30,33 @@ describe('proyección temporal', () => {
       true,
     )
     expect(rows.filter((row) => row.kind === 'track')).toHaveLength(3)
+  })
+
+  it('une conectores descendientes sin cubrir los huecos entre tracks', () => {
+    const source = JSON.parse(JSON.stringify(projectState))
+    const tracks = source.sheetsById['Animated scene'].sequence
+      .tracksByObject['Torus Knot'].trackData
+    tracks.Q9IUK1iBde.keyframes[1].position = 1
+    tracks.rVM9fvISsC.keyframes[0].position = 0.5
+    tracks.rVM9fvISsC.keyframes[1].position = 2
+    tracks.GIF0kOR5zw.keyframes[0].position = 2.5
+    const document = parseTheatreProjectState(source)
+    const rows = buildTimelineRows(document, 'Animated scene')
+    const object = rows.find((row) => row.kind === 'object')
+    const rotation = rows.find((row) => row.path.join('.') === 'rotation')
+    const x = rows.find((row) => row.path.join('.') === 'rotation.x')
+
+    expect(collectRowConnectorIntervals(document, 'Animated scene', object!)).toEqual([
+      {start: 0, end: 2},
+      {start: 2.5, end: 3},
+    ])
+    expect(collectRowConnectorIntervals(document, 'Animated scene', rotation!)).toEqual([
+      {start: 0, end: 2},
+      {start: 2.5, end: 3},
+    ])
+    expect(collectRowConnectorIntervals(document, 'Animated scene', x!)).toEqual([
+      {start: 0, end: 1},
+    ])
   })
 
   it('proyecta valores editables sólo en static overrides y keyframes', () => {
