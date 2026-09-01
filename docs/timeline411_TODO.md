@@ -98,6 +98,24 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 6. `Enter` y blur confirman el cambio; `Escape` lo cancela.
 7. Los números se muestran con hasta tres decimales sin redondear el valor
    almacenado, salvo que el usuario confirme explícitamente un valor nuevo.
+8. Toda propiedad numérica estática muestra, a la izquierda de su editor, un
+   scrubber `↔` que modifica el valor mediante arrastre horizontal.
+9. En una propiedad animada, el scrubber sólo aparece si el keyframe situado en
+   el playhead es exactamente la única selección. Se oculta sin selección, con
+   selección múltiple y durante una interpolación.
+10. La sensibilidad utiliza primero `nudgeMultiplier`; si no existe pero hay
+    `range`, usa `span / 200`; como fallback usa el 1 % de la magnitud inicial
+    con un mínimo de `0.01` por píxel.
+11. `Shift` aplica precisión fina `×0.1`; `Ctrl` o `Cmd` aplica incremento grueso
+    `×10`. Si coinciden, prevalece el modo fino.
+12. El resultado queda limitado al `range` configurado. El modelo rechaza un
+    `nudgeMultiplier` no finito, cero o negativo.
+13. Cada arrastre es un único gesto `preview/commit`: actualiza en vivo el
+    modelo y sus bindings, genera como máximo una entrada de undo al soltar y se
+    restaura sin historial mediante `Escape` o `pointercancel`.
+14. El scrubber no mueve el playhead ni altera la selección. Su cálculo reside
+    en un módulo renderer-neutral reutilizable por la futura vista WebGL y no
+    añade campos al JSON compatible con Theatre.js.
 
 ### Decisiones del viewport temporal
 
@@ -336,6 +354,8 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Edición inline de static overrides.
 - [x] Seleccionar o arrastrar un keyframe sincroniza el playhead.
 - [x] Confirmación con `Enter`/blur, cancelación con `Escape` y undo/redo.
+- [x] Scrubber numérico `↔` para static overrides y keyframes seleccionados, con
+      sensibilidad configurable, modificadores, clamp, preview y un solo undo.
 - [x] Viewport temporal renderer-neutral con visible range y modo fit/manual.
 - [x] Zoom focal, pan, límites y fit de secuencia.
 - [x] Scrollbar horizontal nativa sincronizada con el viewport.
@@ -406,7 +426,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Evento `object:configuration` para refrescar vistas cuando cambia un
       catálogo o schema runtime.
 
-La suite actual contiene 62 pruebas. `npm test` y
+La suite actual contiene 68 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -441,6 +461,7 @@ La suite actual contiene 62 pruebas. `npm test` y
 ### Edición de valores y curvas
 
 - [x] Editor inline de valor para keyframes y static overrides.
+- [x] Value scrubbing numérico con `nudgeMultiplier`, `range`, Shift y Ctrl/Cmd.
 - [x] Editor inline de tiempo del keyframe.
 - [ ] Curve Editor emergente con handles manuales.
 - [ ] Graph Editor redimensionable.

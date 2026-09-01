@@ -375,6 +375,136 @@ describe('vista Timeline 411 HTML', () => {
     timeline.dispose()
   })
 
+  it('ajusta valores estáticos por arrastre con modificadores, undo y cancelación', () => {
+    const timeline = createTimeline({id: 'static-value-scrubbing'})
+    const object = timeline.composition('Scene').object('Material', {
+      opacity: types.number(0.5, {
+        range: [0, 1],
+        nudgeMultiplier: 0.01,
+      }),
+    })
+    timeline.editor.transaction((transaction) => {
+      transaction.set(object.props.opacity, 0.5)
+    }, {label: 'Inicializar opacity'})
+    const view = new Timeline411HtmlView(timeline, 'Scene')
+    view.mount('#timeline-test')
+
+    const getScrubber = () =>
+      findPropertyRow('opacity').querySelector<HTMLButtonElement>(
+        '.k411-timeline-value-scrubber',
+      )
+    const scrubber = getScrubber()
+    expect(scrubber?.textContent).toBe('↔')
+    expect(scrubber?.title).toContain('Shift: ×0.1')
+    if (!scrubber) throw new Error('No se encontró el scrubber de opacity')
+
+    scrubber.dispatchEvent(new MouseEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 100,
+    }))
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 120,
+      ctrlKey: true,
+    }))
+    expect(object.value.opacity).toBe(1)
+    window.dispatchEvent(new MouseEvent('pointerup', {
+      bubbles: true,
+      button: 0,
+      clientX: 120,
+    }))
+    expect(timeline.store.history.undoLabel).toBe('Ajustar opacity')
+
+    expect(timeline.store.undo()).toBe(true)
+    expect(object.value.opacity).toBe(0.5)
+    const historyBeforeCancel = timeline.store.history.undoLabel
+    getScrubber()?.dispatchEvent(new MouseEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 100,
+    }))
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 120,
+      shiftKey: true,
+    }))
+    expect(object.value.opacity).toBe(0.52)
+    document
+      .querySelector<HTMLElement>('[data-timeline411-view]')
+      ?.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true, key: 'Escape'}))
+    expect(object.value.opacity).toBe(0.5)
+    expect(timeline.store.history.undoLabel).toBe(historyBeforeCancel)
+
+    view.dispose()
+    timeline.dispose()
+  })
+
+  it('sólo muestra el scrubber de keyframe para una selección única', () => {
+    const timeline = new Timeline411(projectState)
+    const view = new Timeline411HtmlView(timeline, 'Animated scene')
+    view.mount('#timeline-test')
+
+    const findKeyframe = (title: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>(
+        '.k411-timeline-keyframe',
+      )].find((button) => button.title === title)
+    const getRowScrubber = (label: string) =>
+      findPropertyRow(label).querySelector<HTMLButtonElement>(
+        '.k411-timeline-value-scrubber',
+      )
+    expect(getRowScrubber('x')).toBeNull()
+
+    findKeyframe('x: 0.000s')?.click()
+    expect(getRowScrubber('x')).not.toBeNull()
+    expect(getRowScrubber('y')).toBeNull()
+
+    findKeyframe('y: 0.000s')?.dispatchEvent(
+      new MouseEvent('click', {bubbles: true, ctrlKey: true}),
+    )
+    expect(view.selection.selections).toHaveLength(2)
+    expect(document.querySelector('.k411-timeline-value-scrubber')).toBeNull()
+
+    findKeyframe('x: 0.000s')?.click()
+    const scrubber = getRowScrubber('x')
+    if (!scrubber) throw new Error('No se encontró el scrubber del keyframe x')
+    scrubber.dispatchEvent(new MouseEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 100,
+    }))
+    window.dispatchEvent(new MouseEvent('pointermove', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 110,
+    }))
+    window.dispatchEvent(new MouseEvent('pointerup', {
+      bubbles: true,
+      button: 0,
+      clientX: 110,
+    }))
+    const xTrack = timeline.document.sheetsById['Animated scene'].sequence
+      ?.tracksByObject['Torus Knot'].trackData.Q9IUK1iBde
+    expect(xTrack?.keyframes[0].value).toBe(0.1)
+    expect(timeline.store.history.undoLabel).toBe('Ajustar x')
+    expect(timeline.player.position).toBe(0)
+    expect(view.selection.selections).toHaveLength(1)
+
+    timeline.player.seek(1.5)
+    expect(document.querySelector('.k411-timeline-value-scrubber')).toBeNull()
+
+    view.dispose()
+    timeline.dispose()
+  })
+
   it('usa el schema para representar stringLiteral como selector', () => {
     const timeline = createTimeline({id: 'typed-view'})
     const composition = timeline.composition('Scene')

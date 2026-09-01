@@ -169,6 +169,12 @@ export const timelineTypes = {
     ) {
       throw new Error('El range de number no es válido')
     }
+    if (
+      typeof options.nudgeMultiplier !== 'undefined' &&
+      (!Number.isFinite(options.nudgeMultiplier) || options.nudgeMultiplier <= 0)
+    ) {
+      throw new Error('nudgeMultiplier debe ser un número finito mayor que cero')
+    }
     return markConfig({
       type: 'number',
       default: defaultValue,

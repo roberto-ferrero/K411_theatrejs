@@ -98,6 +98,34 @@ en el playhead. El control sigue estas reglas:
 - `Enter` o blur confirman; `Escape` cancela.
 - Los números se muestran con un máximo de tres decimales. El modelo conserva la
   precisión introducida por el usuario.
+- Un control `↔` permite arrastrar valores numéricos estáticos. En un track sólo
+  aparece si el keyframe bajo el playhead es la única selección; no aparece en
+  interpolaciones, selecciones múltiples ni valores no numéricos.
+- Cada píxel aplica `nudgeMultiplier`, `range span / 200` o un fallback del 1 %
+  de la magnitud inicial con mínimo `0.01`, en ese orden. `Shift` multiplica por
+  `0.1`, `Ctrl/Cmd` por `10` y el resultado respeta `range`.
+- El drag emite previews del documento y actualiza los bindings. Soltar confirma
+  una única operación de historial; `Escape` o `pointercancel` restauran el
+  snapshot inicial. El playhead y la selección no cambian.
+
+La aritmética del scrubber es pública y no depende de HTML:
+
+```ts
+interface NumberScrubOptions {
+  initialValue: number
+  deltaPixels: number
+  nudgeMultiplier?: number
+  range?: readonly [number, number]
+  fine?: boolean
+  coarse?: boolean
+}
+
+getNumberScrubStep(initialValue, options?): number
+calculateScrubbedNumber(options: NumberScrubOptions): number
+```
+
+Estas funciones se pueden reutilizar desde un controlador WebGL. No guardan
+estado de vista ni modifican el formato `animation.json`.
 
 El viewport temporal también está implementado como estado independiente de la
 vista. Empieza encajando toda la secuencia y ofrece zoom focal, pan, rango
@@ -932,8 +960,8 @@ ignorar historial permanecen como evolución futura.
 ### `timeline.store.beginGesture(label)`
 
 Crea una transacción temporal de bajo nivel para drag, resize, edición de
-handles o value scrubbing. Su traslado a `timeline.editor.beginGesture()` está
-pendiente.
+handles o value scrubbing. La vista HTML ya la utiliza para el scrubber
+numérico. Su traslado a `timeline.editor.beginGesture()` está pendiente.
 
 ```ts
 interface EditingGesture {
@@ -1749,6 +1777,12 @@ gesture:commit o gesture:cancel      1 vez
 Los eventos `document:preview`, `gesture:update`, `sequence:position`,
 `object:valuesChange` y `timeline:snapshot` son de alta frecuencia. Los listeners
 deben poder solicitar scheduling por animation frame.
+
+En la implementación actual del scrubber, cada cambio efectivo de píxeles emite
+`document:preview`. Al soltar se emite como máximo un `document:change` y el
+correspondiente `history:change`; al cancelar se emite un reemplazo del documento
+sin nueva entrada de historial. Los eventos públicos `gesture:*` continúan
+formando parte de la evolución prevista.
 
 ### Eventos síncronos
 

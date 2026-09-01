@@ -44,6 +44,7 @@ import type {
   TimelineViewportChange,
   TimelineViewportChangeReason,
 } from './viewport'
+import {calculateScrubbedNumber} from './valueScrubbing'
 import {
   getViewportScrollLeft,
   getViewportVirtualWidth,
@@ -1154,10 +1155,12 @@ export class Timeline411HtmlView {
     if (cell.contains(document.activeElement)) return
     const property = this.getPropertyRef(row)
     const formatted = formatPropertyValue(projection.value, property?.config)
+    const scrubbable = this.canScrubRowValue(projection, property)
     const signature = JSON.stringify([
       projection.mode,
       formatted,
       projection.keyframe?.keyframeId,
+      scrubbable,
     ])
     if (cell.dataset.valueSignature === signature) return
     cell.dataset.valueSignature = signature
@@ -1168,6 +1171,10 @@ export class Timeline411HtmlView {
     cell.classList.toggle(
       'k411-timeline-tree-row__value--keyframe',
       projection.mode === 'keyframe',
+    )
+    cell.classList.toggle(
+      'k411-timeline-tree-row__value--scrubbable',
+      scrubbable,
     )
     cell.replaceChildren()
 
@@ -1233,7 +1240,115 @@ export class Timeline411HtmlView {
         finish(true)
       })
     }
-    cell.appendChild(editor.element)
+    if (scrubbable) {
+      const scrubber = document.createElement('button')
+      scrubber.type = 'button'
+      scrubber.className = 'k411-timeline-value-scrubber'
+      scrubber.textContent = '↔'
+      scrubber.setAttribute(
+        'aria-label',
+        `Ajustar valor de ${row.label} arrastrando horizontalmente`,
+      )
+      scrubber.title = 'Arrastrar: ajustar · Shift: ×0.1 · Ctrl/Cmd: ×10'
+      scrubber.addEventListener('pointerdown', (event) => {
+        this.startValueScrub(event, row, projection, property)
+      })
+      scrubber.addEventListener('click', () => {
+        editor.element.focus({preventScroll: true})
+      })
+      cell.append(scrubber, editor.element)
+    } else {
+      cell.appendChild(editor.element)
+    }
+  }
+
+  private canScrubRowValue(
+    projection: TimelineRowValueProjection,
+    property: TimelinePropertyRef | undefined,
+  ): boolean {
+    if (typeof projection.value !== 'number') return false
+    if (property && property.config.type !== 'number') return false
+    if (projection.mode === 'static') return true
+    return (
+      projection.mode === 'keyframe' &&
+      Boolean(projection.keyframe) &&
+      this.keyframeSelection.size === 1 &&
+      sameKeyframeAddress(this.selected, projection.keyframe)
+    )
+  }
+
+  private startValueScrub(
+    event: PointerEvent,
+    row: TimelineRow,
+    projection: TimelineRowValueProjection,
+    property: TimelinePropertyRef | undefined,
+  ): void {
+    if (
+      event.button !== 0 ||
+      typeof projection.value !== 'number' ||
+      !this.canScrubRowValue(projection, property)
+    ) return
+    event.preventDefault()
+    event.stopPropagation()
+    this.cancelActiveGesture()
+    this.root?.focus({preventScroll: true})
+
+    const config = property?.config.type === 'number' ? property.config : undefined
+    const initialValue = projection.value
+    const startClientX = event.clientX
+    const gesture = this.timeline.store.beginGesture(`Ajustar ${row.label}`)
+    this.activeGesture = gesture
+    this.root?.classList.add('k411-timeline-root--value-scrubbing')
+    let lastValue = initialValue
+
+    const move = (moveEvent: PointerEvent): void => {
+      const deltaPixels = moveEvent.clientX - startClientX
+      if (Math.abs(deltaPixels) <= 2) return
+      moveEvent.preventDefault()
+      const value = Number(calculateScrubbedNumber({
+        initialValue,
+        deltaPixels,
+        nudgeMultiplier: config?.nudgeMultiplier,
+        range: config?.range,
+        fine: moveEvent.shiftKey,
+        coarse: moveEvent.ctrlKey || moveEvent.metaKey,
+      }).toFixed(12))
+      if (value === lastValue) return
+      lastValue = value
+      gesture.update((transaction) => {
+        if (projection.mode === 'keyframe' && projection.keyframe) {
+          transaction.updateKeyframe(projection.keyframe, {value})
+        } else {
+          transaction.setStaticValue(
+            {sheetId: this.sheetId, objectKey: row.objectKey, path: row.path},
+            value,
+          )
+        }
+      })
+    }
+    const cleanup = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', cancel)
+      this.root?.classList.remove('k411-timeline-root--value-scrubbing')
+      if (this.cancelPointerInteraction === cancel) {
+        this.cancelPointerInteraction = undefined
+      }
+    }
+    const finish = (): void => {
+      cleanup()
+      if (gesture.active) gesture.commit()
+      if (this.activeGesture === gesture) this.activeGesture = undefined
+    }
+    const cancel = (): void => {
+      cleanup()
+      if (gesture.active) gesture.cancel()
+      if (this.activeGesture === gesture) this.activeGesture = undefined
+    }
+    this.cancelPointerInteraction = cancel
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish, {once: true})
+    window.addEventListener('pointercancel', cancel, {once: true})
   }
 
   private commitRowValue(

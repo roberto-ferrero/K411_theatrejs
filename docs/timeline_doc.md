@@ -1413,6 +1413,31 @@ Su modo depende de la procedencia del valor:
 El modo debe calcularse fuera del renderer para que una futura vista WebGL pueda
 aplicar exactamente las mismas reglas de edición que la vista HTML.
 
+### Numeric Value Scrubber / Scrubber numérico
+
+Control `↔` situado a la izquierda del editor de una propiedad numérica. Un
+arrastre horizontal transforma la distancia en píxeles en un nuevo valor sin
+necesidad de escribirlo. En propiedades estáticas está activo siempre; en una
+propiedad animada sólo está activo cuando el keyframe bajo el playhead es la
+única selección. Se oculta durante una interpolación, con selección múltiple y
+para valores no numéricos.
+
+El gesto actualiza el documento y los bindings mediante previews. Al soltar se
+consolida como una única operación de undo; `Escape` o `pointercancel` restauran
+el valor inicial. No cambia ni el playhead ni la selección. La aritmética está
+separada del DOM para que HTML y WebGL puedan compartirla.
+
+### Nudge Multiplier / Multiplicador de ajuste
+
+Cantidad numérica aplicada por cada píxel de arrastre. Se configura como
+`nudgeMultiplier` en una prop `number`. Si no está definido, Timeline 411 deriva
+la sensibilidad de `range` dividiendo su amplitud entre 200; sin rango, usa el
+1 % de la magnitud inicial con un mínimo de `0.01`.
+
+`Shift` multiplica la sensibilidad por `0.1` para ajustes finos y `Ctrl/Cmd` por
+`10` para ajustes gruesos. El valor final se limita al rango de la propiedad. Si
+ambos modificadores coinciden, prevalece el ajuste fino.
+
 ### Row Height
 
 Altura de una fila. Es necesaria para layout, virtualización y hit testing.

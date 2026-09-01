@@ -82,4 +82,12 @@ describe('tipos de propiedades de Timeline 411', () => {
       file: {type: 'file', id: 'document-id'},
     })
   })
+
+  it('valida que nudgeMultiplier sea finito y positivo', () => {
+    expect(types.number(0, {nudgeMultiplier: 0.25}).nudgeMultiplier).toBe(0.25)
+    expect(() => types.number(0, {nudgeMultiplier: 0})).toThrow(/mayor que cero/)
+    expect(() => types.number(0, {nudgeMultiplier: Number.NaN})).toThrow(
+      /finito/,
+    )
+  })
 })
