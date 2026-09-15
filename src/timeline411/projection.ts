@@ -14,8 +14,19 @@ import {
 } from './paths'
 import type {TimelineViewportSnapshot} from './viewport'
 import {timeToViewportX} from './viewport'
+import {
+  getTimelineEventFamilies,
+  timelineEventsGroupRowId,
+  timelineEventsObjectKey,
+} from './eventTracks'
 
-export type TimelineRowKind = 'object' | 'group' | 'track' | 'static'
+export type TimelineRowKind =
+  | 'eventGroup'
+  | 'eventTrack'
+  | 'object'
+  | 'group'
+  | 'track'
+  | 'static'
 
 export interface TimelineRow {
   readonly id: string
@@ -27,6 +38,7 @@ export interface TimelineRow {
   readonly trackId?: string
   readonly trackIds: readonly string[]
   readonly hasChildren: boolean
+  readonly eventFamilyId?: string
 }
 
 export type TimelineRowValueMode =
@@ -73,7 +85,34 @@ export function buildTimelineRows(
   ])
   const rows: TimelineRow[] = []
 
+  const eventFamilies = getTimelineEventFamilies(document, sheetId)
+  rows.push({
+    id: timelineEventsGroupRowId,
+    label: 'Eventos',
+    depth: 0,
+    kind: 'eventGroup',
+    objectKey: timelineEventsObjectKey,
+    path: [],
+    trackIds: eventFamilies.map(({trackId}) => trackId),
+    hasChildren: eventFamilies.length > 0,
+  })
+  for (const family of eventFamilies) {
+    rows.push({
+      id: `${timelineEventsGroupRowId}:${family.familyId}`,
+      label: family.label,
+      depth: 1,
+      kind: 'eventTrack',
+      objectKey: timelineEventsObjectKey,
+      path: family.path,
+      trackId: family.trackId,
+      trackIds: [family.trackId],
+      hasChildren: false,
+      eventFamilyId: family.familyId,
+    })
+  }
+
   for (const objectKey of [...objectKeys].sort()) {
+    if (objectKey === timelineEventsObjectKey) continue
     const root: MutableRowNode = {
       label: objectKey,
       objectKey,
@@ -174,6 +213,23 @@ export function projectTimelineRowValue(
   position: number,
   evaluated: EvaluatedSheet,
 ): TimelineRowValueProjection {
+  if (row.kind === 'eventTrack' && row.trackId) {
+    const keyframe = document.sheetsById[sheetId]?.sequence
+      ?.tracksByObject[row.objectKey]?.trackData[row.trackId]?.keyframes.find(
+        (candidate) => Math.abs(candidate.position - position) < 1e-6,
+      )
+    return keyframe
+      ? {
+          mode: 'keyframe',
+          keyframe: {
+            sheetId,
+            objectKey: row.objectKey,
+            trackId: row.trackId,
+            keyframeId: keyframe.id,
+          },
+        }
+      : {mode: 'readonly'}
+  }
   if ((row.kind !== 'track' && row.kind !== 'static') || row.path.length === 0) {
     return {mode: 'hidden'}
   }

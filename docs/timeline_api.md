@@ -268,6 +268,14 @@ keyframes descendientes, HTML solicita confirmación antes de llamar a
 eliminadas, la operación queda agrupada en una entrada de undo/redo y la property
 reaparece en el selector `+`.
 
+La capa global `Eventos` aparece siempre antes que cualquier objeto. Su botón `+`
+crea una familia mediante un nombre; cada familia puede renombrarse con doble
+clic o eliminarse con `−`. El rombo y el doble clic en la lane crean o quitan un
+cue en el playhead. Los cues se seleccionan y desplazan como keyframes normales,
+pero no tienen easing ni conectores porque su semántica es instantánea. Al
+seleccionar uno, la toolbar ofrece una etiqueta opcional y un payload JSON. La
+fila padre resume las posiciones de todas las familias y puede plegarlas.
+
 Cuando el número de layers supera el alto disponible, el área temporal ofrece
 el único scroll vertical y sincroniza su `scrollTop` con el árbol. La rueda puede
 usarse sobre cualquiera de los dos paneles. La toolbar, la cabecera del árbol y
@@ -288,6 +296,7 @@ Eventos del núcleo implementados:
 - `history:change`.
 - `sequence:position`, `sequence:play` y `sequence:pause`.
 - `object:configuration`.
+- `event:trigger`, al cruzar un cue durante reproducción.
 
 Eventos propios de cada vista implementados:
 
@@ -492,6 +501,7 @@ interface Timeline411 {
 
   getDuration(sheetId: string): number
   getFps(sheetId: string): number
+  getEventFamilies(sheetId: string): readonly TimelineEventFamily[]
   getPlayer(sheetId: string): TimelinePlayer
   evaluate(sheetId: string, time: number): EvaluatedSheet
   serialize(): TheatreProjectState
@@ -976,6 +986,16 @@ interface TimelineTransaction {
     handles: readonly [x1: number, y1: number, x2: number, y2: number],
   ): void
 
+  addEventFamily(sheetId: string, label: string): TimelineEventFamilyAddress
+  renameEventFamily(address: TimelineEventFamilyAddress, label: string): void
+  removeEventFamily(address: TimelineEventFamilyAddress): void
+  addEventCue(
+    address: TimelineEventFamilyAddress,
+    cue: {position: number; label?: string; payload?: SerializableValue},
+  ): KeyframeAddress
+  updateEventCue(address: KeyframeAddress, cue: TimelineEventCueData): void
+  removeEventCue(address: KeyframeAddress): void
+
   forgetObject(object: TimelineObject | ObjectAddress): void
   setDuration(sheetId: string, duration: number): void
   setFps(sheetId: string, fps: number): void
@@ -987,6 +1007,31 @@ keyframe indicado y el handle entrante del siguiente. Rechaza el último
 keyframe, exige cuatro números finitos y restringe `x1` y `x2` a `[0, 1]`; Y no
 se limita para permitir undershoot y overshoot. La operación conserva el modelo
 Theatre.js 0.7.2 y no crea un tipo de curva exclusivo de Timeline 411.
+
+### Familias y cues de eventos
+
+Una familia es una fila discreta, por ejemplo `Explosión` o `Cambiar cámara`.
+Cada familia admite cualquier número de cues en tiempos diferentes. Crear,
+renombrar o eliminar una familia y crear, editar o borrar un cue son operaciones
+transaccionales con undo/redo.
+
+```ts
+timeline.editor.transaction((tx) => {
+  const explosions = tx.addEventFamily('Animated scene', 'Explosión')
+  tx.addEventCue(explosions, {
+    position: 0.75,
+    label: 'Carga A',
+    payload: {intensity: 3, source: 'torus'},
+  })
+  tx.addEventCue(explosions, {position: 2.25})
+}, {label: 'Crear eventos de explosión'})
+```
+
+El payload admite el subconjunto serializable del modelo: strings, booleanos,
+números finitos y objetos anidados. No admite `null` ni arrays. Dos cues de una
+misma familia no pueden ocupar el mismo frame; familias distintas sí pueden
+coincidir temporalmente. Borrar el último cue conserva la familia vacía. Borrar
+la familia elimina todos sus cues.
 
 ### Semántica de `set(property, value)`
 
@@ -1281,7 +1326,15 @@ Reglas de compatibilidad:
 - `connectedRight`, `type`, `position` y `value` conservan la semántica de
   Theatre.js.
 - El serializer no renombra `Sheet` como `Composition` dentro del JSON.
-- No se añaden campos de Timeline 411, aunque parezcan inocuos.
+- No se añaden campos ajenos al esquema Theatre.js. Los event tracks propios de
+  Timeline 411 se proyectan dentro de estructuras válidas: un objeto reservado
+  `__Timeline411_Events__`, tracks `BasicKeyframedTrack`, metadata en
+  `staticOverrides` y cue data codificada como string en `value`.
+
+El objeto reservado permite que el mismo JSON se cargue directamente en
+Theatre.js 0.7.2 sin adaptador. Theatre.js conserva y acepta esos datos, pero no
+interpreta por sí mismo su semántica ni emite `event:trigger`; esa conducta
+pertenece al runtime de Timeline 411.
 
 ### Carga de un estado de Theatre.js
 
@@ -1487,6 +1540,7 @@ interface TimelineEventMap {
   'sequence:iteration': SequenceIterationEvent
   'sequence:end': SequenceEndEvent
   'timeline:snapshot': TimelineSnapshotEvent
+  'event:trigger': TimelineEventTrigger
 
   'history:change': HistoryChangeEvent
   'history:undo': HistoryEvent
@@ -1649,6 +1703,7 @@ pero puede ser más costoso que suscribirse sólo a un objeto o prop.
 | `sequence:position` | La posición efectiva cambia por seek o playback. |
 | `sequence:iteration` | Comienza una nueva iteración. |
 | `sequence:end` | El playback termina naturalmente. |
+| `event:trigger` | El playhead cruza un cue durante reproducción. |
 
 ```ts
 interface SequencePositionEvent
@@ -1673,11 +1728,32 @@ interface SequenceEndEvent extends EventEnvelope<'sequence:end'> {
   readonly position: number
   readonly iterations: number
 }
+
+interface TimelineEventTrigger {
+  readonly type: 'event:trigger'
+  readonly id: string
+  readonly familyId: string
+  readonly familyLabel: string
+  readonly label?: string
+  readonly payload?: SerializableValue
+  readonly position: number
+  readonly address: KeyframeAddress
+  readonly previousPosition: number
+  readonly currentPosition: number
+  readonly direction: 'forward' | 'reverse'
+  readonly iteration: number
+}
 ```
 
 `sequence:pause` no se emite cuando la secuencia termina naturalmente; en ese caso
 se emite `sequence:end`. `sequence:stop` sólo corresponde a una llamada explícita
 a `stop()`.
+
+`event:trigger` sí está implementado. Se emite por cada cue que el playback cruza,
+incluidos los saltos grandes entre ticks y cada iteración de un loop. El orden es
+temporal; si varios cues coinciden, se conserva el orden de las familias. Un
+`seek()` explícito no dispara cues. La dirección `reverse` forma parte del
+contrato, aunque la reproducción inversa sigue pendiente.
 
 ### Eventos de selección e historial
 
@@ -2076,6 +2152,7 @@ utilice.
 - [x] Undo/redo.
 - [x] `serialize()` y carga validada en Theatre.js 0.7.2.
 - [x] Eventos básicos `document:*`, `history:change` y `sequence:*`.
+- [x] Familias, cues y emisión runtime `event:trigger`.
 - [x] `Timeline411HtmlView.mount()`, `ResizeObserver` y eventos de vista.
 - [ ] Sobres de eventos, `warning`, `error`, eventos detallados de objetos y
       transacciones.
@@ -2083,7 +2160,7 @@ utilice.
 
 ### Segunda etapa
 
-- Markers y event tracks.
+- Markers y políticas avanzadas de event tracks para reverse, seek y rangos.
 - Playback alternado y rangos dinámicos.
 - Reloj de audio.
 - Copiar, pegar y escalar selecciones.

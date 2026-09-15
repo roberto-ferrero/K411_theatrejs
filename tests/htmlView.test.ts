@@ -56,6 +56,7 @@ describe('vista Timeline 411 HTML', () => {
       )].find((button) => button.getAttribute('aria-label') === label)
 
     expect(visibleLabels()).toEqual([
+      'Eventos',
       'Torus Knot',
       'rotation',
       'x',
@@ -63,7 +64,7 @@ describe('vista Timeline 411 HTML', () => {
       'z',
       'wireframe',
     ])
-    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(6)
+    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(7)
     expect(
       document.querySelectorAll('.k411-timeline-connector--aggregate'),
     ).toHaveLength(2)
@@ -74,22 +75,22 @@ describe('vista Timeline 411 HTML', () => {
     ).toBeNull()
 
     disclosure('Colapsar grupo rotation')?.click()
-    expect(visibleLabels()).toEqual(['Torus Knot', 'rotation', 'wireframe'])
-    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(3)
+    expect(visibleLabels()).toEqual(['Eventos', 'Torus Knot', 'rotation', 'wireframe'])
+    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(4)
     expect(document.querySelectorAll('.k411-timeline-keyframe--aggregate')).toHaveLength(4)
     expect(
       document.querySelectorAll('.k411-timeline-connector--aggregate'),
     ).toHaveLength(2)
 
     disclosure('Colapsar objeto Torus Knot')?.click()
-    expect(visibleLabels()).toEqual(['Torus Knot'])
-    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(1)
+    expect(visibleLabels()).toEqual(['Eventos', 'Torus Knot'])
+    expect(document.querySelectorAll('.k411-timeline-lane')).toHaveLength(2)
     expect(
       document.querySelectorAll('.k411-timeline-connector--aggregate'),
     ).toHaveLength(1)
 
     disclosure('Desplegar objeto Torus Knot')?.click()
-    expect(visibleLabels()).toEqual(['Torus Knot', 'rotation', 'wireframe'])
+    expect(visibleLabels()).toEqual(['Eventos', 'Torus Knot', 'rotation', 'wireframe'])
     expect(view.rowExpansion.collapsedRowIds).toEqual([
       'Torus Knot:["rotation"]',
     ])
@@ -99,6 +100,7 @@ describe('vista Timeline 411 HTML', () => {
 
     disclosure('Desplegar grupo rotation')?.click()
     expect(visibleLabels()).toEqual([
+      'Eventos',
       'Torus Knot',
       'rotation',
       'x',
@@ -139,7 +141,7 @@ describe('vista Timeline 411 HTML', () => {
     view.mount('#timeline-test')
 
     const getAddButton = () =>
-      document.querySelector<HTMLButtonElement>(
+      findPropertyRow('Cube').querySelector<HTMLButtonElement>(
         '.k411-timeline-tree-row__property-add',
       )
     const documentBeforeCancellation = timeline.stringify()
@@ -201,7 +203,7 @@ describe('vista Timeline 411 HTML', () => {
       [...document.querySelectorAll<HTMLElement>(
         '.k411-timeline-tree-row__label',
       )].map(({textContent}) => textContent),
-    ).toEqual(['Cube', 'Posición', 'x', 'y', 'z'])
+    ).toEqual(['Eventos', 'Cube', 'Posición', 'x', 'y', 'z'])
     expect(
       document.querySelector('.k411-timeline-tree-row__property-picker'),
     ).toBeNull()
@@ -237,7 +239,7 @@ describe('vista Timeline 411 HTML', () => {
       [...document.querySelectorAll<HTMLElement>(
         '.k411-timeline-tree-row__label',
       )].map(({textContent}) => textContent),
-    ).toEqual(['Cube'])
+    ).toEqual(['Eventos', 'Cube'])
 
     view.dispose()
     timeline.dispose()
@@ -301,9 +303,9 @@ describe('vista Timeline 411 HTML', () => {
       [...document.querySelectorAll<HTMLElement>(
         '.k411-timeline-tree-row__label',
       )].map(({textContent}) => textContent),
-    ).toEqual(['Cube'])
+    ).toEqual(['Eventos', 'Cube'])
 
-    document.querySelector<HTMLButtonElement>(
+    findPropertyRow('Cube').querySelector<HTMLButtonElement>(
       '.k411-timeline-tree-row__property-add',
     )?.click()
     expect(
@@ -666,7 +668,7 @@ describe('vista Timeline 411 HTML', () => {
     expect(treeHeader.parentElement).not.toBe(treeRows)
     expect(ruler.querySelector('.k411-timeline-playhead-handle')).not.toBeNull()
     expect(document.querySelector<HTMLElement>('.k411-timeline-surface')?.style.height).toBe(
-      '198px',
+      '226px',
     )
 
     const changes: Array<{scrollTop: number; reason: string}> = []
@@ -996,20 +998,20 @@ describe('vista Timeline 411 HTML', () => {
       bubbles: true,
       button: 0,
       clientX: 0,
-      clientY: 90,
+      clientY: 118,
     }))
     window.dispatchEvent(new MouseEvent('pointermove', {
       bubbles: true,
       button: 0,
       clientX: 15,
-      clientY: 140,
+      clientY: 168,
     }))
     expect(document.querySelector('.k411-timeline-marquee')).not.toBeNull()
     window.dispatchEvent(new MouseEvent('pointerup', {
       bubbles: true,
       button: 0,
       clientX: 15,
-      clientY: 140,
+      clientY: 168,
     }))
     surface.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
 
@@ -1025,19 +1027,19 @@ describe('vista Timeline 411 HTML', () => {
       button: 0,
       shiftKey: true,
       clientX: 0,
-      clientY: 145,
+      clientY: 173,
     }))
     window.dispatchEvent(new MouseEvent('pointermove', {
       bubbles: true,
       button: 0,
       clientX: 15,
-      clientY: 170,
+      clientY: 198,
     }))
     window.dispatchEvent(new MouseEvent('pointerup', {
       bubbles: true,
       button: 0,
       clientX: 15,
-      clientY: 170,
+      clientY: 198,
     }))
     surface.dispatchEvent(new MouseEvent('click', {bubbles: true, button: 0}))
 
@@ -1578,6 +1580,76 @@ describe('vista Timeline 411 HTML', () => {
     )
     window.dispatchEvent(new MouseEvent('pointerup', {bubbles: true, button: 0}))
     expect(timeline.player.position).toBe(1)
+
+    view.dispose()
+    timeline.dispose()
+  })
+  it('crea familias y edita cues desde la capa global Eventos', () => {
+    let id = 0
+    const timeline = createTimeline({
+      id: 'event-ui',
+      idFactory: (prefix) => `${prefix}_${++id}`,
+    })
+    timeline.composition('Scene')
+    timeline.editor.transaction((transaction) => {
+      transaction.setDuration('Scene', 3)
+    })
+    const view = new Timeline411HtmlView(timeline, 'Scene')
+    view.mount('#timeline-test')
+
+    findPropertyRow('Eventos')
+      .querySelector<HTMLButtonElement>('.k411-timeline-tree-row__event-family-add')
+      ?.click()
+    const nameInput = document.querySelector<HTMLInputElement>(
+      '.k411-timeline-tree-row__event-family-name',
+    )
+    if (!nameInput) throw new Error('No se abrió el alta de familia')
+    nameInput.value = 'Explosión'
+    nameInput.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+    }))
+
+    const familyRow = findPropertyRow('Explosión')
+    timeline.player.seek(1)
+    familyRow
+      .querySelector<HTMLButtonElement>('.k411-timeline-tree-row__keyframe-toggle')
+      ?.click()
+    expect(timeline.getEventFamilies('Scene')[0].cues).toHaveLength(1)
+
+    document.querySelector<HTMLButtonElement>('.k411-timeline-keyframe--event')?.click()
+    expect(
+      document.querySelector<HTMLElement>('.k411-timeline-event-cue-context')?.hidden,
+    ).toBe(false)
+    expect(
+      document.querySelector<HTMLElement>('.k411-timeline-interpolation')?.hidden,
+    ).toBe(true)
+    const labelInput = document.querySelector<HTMLInputElement>(
+      '[aria-label="Etiqueta del evento seleccionado"]',
+    )
+    const payloadInput = document.querySelector<HTMLInputElement>(
+      '[aria-label="Payload JSON del evento seleccionado"]',
+    )
+    if (!labelInput || !payloadInput) throw new Error('Faltan editores del cue')
+    labelInput.value = 'Carga A'
+    payloadInput.value = '{"intensity":3}'
+    payloadInput.dispatchEvent(new Event('input', {bubbles: true}))
+    payloadInput.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+    }))
+    expect(timeline.getEventFamilies('Scene')[0].cues[0]).toMatchObject({
+      label: 'Carga A',
+      payload: {intensity: 3},
+    })
+
+    document
+      .querySelector<HTMLElement>('[data-timeline411-view]')
+      ?.dispatchEvent(new KeyboardEvent('keydown', {key: 'Delete', bubbles: true}))
+    expect(timeline.getEventFamilies('Scene')[0]).toMatchObject({
+      label: 'Explosión',
+      cues: [],
+    })
 
     view.dispose()
     timeline.dispose()

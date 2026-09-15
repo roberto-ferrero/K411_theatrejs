@@ -30,7 +30,7 @@ describe('hit testing renderer-neutral de marquee', () => {
       document,
       'Animated scene',
       rows,
-      {timeStart: 0.1, timeEnd: 0, rowStart: 4, rowEnd: 2},
+      {timeStart: 0.1, timeEnd: 0, rowStart: 5, rowEnd: 3},
     )
 
     expect(selected.map(({keyframeId}) => keyframeId)).toEqual([

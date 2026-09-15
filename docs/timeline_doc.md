@@ -422,6 +422,48 @@ Track que dispara eventos al cruzar determinados tiempos. Se diferencia de un
 track de valores porque importa el cruce temporal, la dirección y si el playhead
 salta sobre un evento.
 
+En Timeline 411 cada event track representa una **familia de eventos**. Es un
+track discreto: no interpola valores ni dibuja conectores entre cues. Se almacena
+como un `BasicKeyframedTrack` válido dentro del objeto reservado
+`__Timeline411_Events__`, de modo que el JSON continúa siendo cargable
+directamente en Theatre.js 0.7.2.
+
+### Event Family
+
+Categoría nominal que ocupa una fila de eventos, por ejemplo `Explosión` o
+`Cambiar cámara`. Una familia contiene cero o más event cues. Puede crearse,
+renombrarse, plegarse y eliminarse; eliminarla borra todos sus cues, mientras que
+borrar el último cue conserva la familia vacía.
+
+### Event Cue
+
+Punto instantáneo situado en un tiempo de una event family. Visualmente utiliza
+un keyframe diferenciado, pero no posee segmento de salida ni easing. Puede tener
+una etiqueta opcional y un payload. Al moverlo se aplica el mismo snapping y las
+mismas reglas de colisión temporal que a los keyframes de propiedades.
+
+### Event Payload
+
+Datos opcionales entregados al consumidor cuando se dispara un cue. Timeline 411
+admite strings, booleanos, números finitos y objetos anidados compatibles con su
+modelo serializable. En la versión actual no admite arrays ni `null`.
+
+### Event Trigger
+
+Notificación runtime `event:trigger` emitida cuando la reproducción cruza un
+event cue. Incluye familia, etiqueta, payload, posición, dirección, iteración y
+el intervalo recorrido por el player. Un salto grande puede disparar varios cues
+en orden temporal y los loops vuelven a dispararlos en cada vuelta. `seek()` no
+los dispara para evitar efectos laterales durante edición o scrubbing.
+
+### Crossing Semantics
+
+Regla que decide si un cue pertenece al intervalo temporal recorrido entre dos
+ticks. En avance normal se usa un intervalo abierto por la izquierda y cerrado
+por la derecha, salvo el inicio de una reproducción o iteración, que incluye el
+tiempo cero. Esta regla evita duplicados en ticks consecutivos sin perder cues
+cuando el reloj salta varios frames.
+
 ### Group Track
 
 Agrupación visual de varios tracks. No tiene por qué persistirse como entidad

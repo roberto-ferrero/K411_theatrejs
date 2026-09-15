@@ -15,6 +15,7 @@
   --k411-easing-ease-in: #a78bfa;
   --k411-easing-ease-out: #43d3b0;
   --k411-easing-ease-in-out: #f078c8;
+  --k411-event: #4fd1c5;
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -195,6 +196,45 @@
   align-items: center;
   color: var(--k411-muted);
   white-space: nowrap;
+}
+
+.k411-timeline-event-cue-context,
+.k411-timeline-event-cue-context label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--k411-muted);
+}
+
+.k411-timeline-event-cue-context {
+  gap: 7px;
+}
+
+.k411-timeline-event-cue-context[hidden] {
+  display: none;
+}
+
+.k411-timeline-event-cue-context input {
+  height: 22px;
+  padding: 0 5px;
+  color: var(--k411-text);
+  border: 1px solid rgb(79 209 197 / 38%);
+  border-radius: 4px;
+  outline: none;
+  background: #121721;
+}
+
+.k411-timeline-event-cue-context input:focus-visible {
+  border-color: var(--k411-event);
+  box-shadow: 0 0 0 1px rgb(79 209 197 / 24%);
+}
+
+.k411-timeline-event-cue-context label:first-child input {
+  width: 92px;
+}
+
+.k411-timeline-event-cue-context label:last-child input {
+  width: 150px;
 }
 
 .k411-timeline-duration-input {
@@ -595,6 +635,21 @@
   font-weight: 650;
 }
 
+.k411-timeline-tree-row--eventGroup {
+  color: #d9fffb;
+  background: rgb(79 209 197 / 7%);
+  font-weight: 650;
+}
+
+.k411-timeline-tree-row--eventTrack {
+  color: #a8ddd8;
+}
+
+.k411-timeline-tree-row--eventGroup .k411-timeline-tree-row__icon,
+.k411-timeline-tree-row--eventTrack .k411-timeline-tree-row__icon {
+  color: var(--k411-event);
+}
+
 .k411-timeline-tree-row--group {
   color: #cbd2dd;
 }
@@ -704,6 +759,24 @@
   outline: none;
   background: #111620;
   font-size: 10px;
+}
+
+.k411-timeline-tree-row__event-family-name {
+  width: 126px;
+  height: 22px;
+  min-width: 70px;
+  flex: 1 1 126px;
+  padding: 0 5px;
+  color: var(--k411-text);
+  border: 1px solid var(--k411-event);
+  border-radius: 3px;
+  outline: none;
+  background: #111620;
+  font-size: 10px;
+}
+
+.k411-timeline-tree-row__event-family-name:focus {
+  box-shadow: 0 0 0 1px rgb(79 209 197 / 30%);
 }
 
 .k411-timeline-tree-row__label {
@@ -936,6 +1009,14 @@
   background: rgb(255 255 255 / 2%);
 }
 
+.k411-timeline-lane--eventGroup {
+  background: rgb(79 209 197 / 4%);
+}
+
+.k411-timeline-lane--eventTrack:hover {
+  background: rgb(79 209 197 / 5%);
+}
+
 .k411-timeline-lane--track:hover {
   background: rgb(98 184 235 / 4%);
 }
@@ -973,6 +1054,11 @@
 
 .k411-timeline-keyframe:hover {
   filter: brightness(1.2);
+}
+
+.k411-timeline-keyframe--event {
+  border-color: #bffff9;
+  background: var(--k411-event);
 }
 
 .k411-timeline-keyframe:active {

@@ -377,6 +377,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Player básico con play, pause, seek y loop.
 - [x] Bindings desacoplados, incluido el torus Three.js.
 - [x] Eventos básicos de documento, historial y reproducción.
+- [x] Event tracks globales por familias, con cues discretos y emisión al cruce.
 
 ### Store y edición inicial
 
@@ -458,6 +459,18 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
       única transacción reversible.
 - [x] Botón `−` para quitar properties simples o compuestas, con confirmación si
       contienen keyframes, limpieza de selección y undo/redo.
+- [x] Capa global `Eventos` por encima de los objetos, plegable y con resumen de
+      cues descendientes.
+- [x] Alta, renombrado y borrado de familias de eventos desde la GUI; el borrado
+      de familias con cues requiere confirmación.
+- [x] N cues por familia mediante rombo o doble clic, movimiento y borrado sin
+      eliminar la familia cuando queda vacía.
+- [x] Edición contextual de etiqueta opcional y payload JSON de cada cue; los
+      cues no muestran interpolación porque son puntos discretos.
+- [x] Emisión tipada `event:trigger` durante playback, ordenada por tiempo y
+      repetida por iteración; `seek()` no dispara eventos.
+- [x] Persistencia compatible sin adaptador mediante un objeto Theatre.js
+      reservado y tracks/string values válidos para 0.7.2.
 
 ## API de objetos y tracks completada (2026-08-20)
 
@@ -484,7 +497,7 @@ pendientes necesarios para aproximarse al editor de secuencias de Theatre.js
 - [x] Evento `object:configuration` para refrescar vistas cuando cambia un
       catálogo o schema runtime.
 
-La suite actual contiene 77 pruebas. `npm test` y
+La suite actual contiene 84 pruebas. `npm test` y
 `npm run build` finalizan correctamente.
 
 ## TODO pendiente después de la API de objetos y tracks
@@ -544,7 +557,10 @@ La suite actual contiene 77 pruebas. `npm test` y
 
 ### Eventos y calidad
 
-- [ ] Completar el catálogo de eventos de `timeline_api.md`.
+- [x] Event tracks globales, familias, cues, payload y `event:trigger`.
+- [ ] Política para disparar cues en `seek`, reproducción reverse y rangos.
+- [ ] Importación/edición de familias de eventos externas malformadas.
+- [ ] Completar el resto del catálogo de eventos de `timeline_api.md`.
 - [ ] Change sets y rollback público de transacciones.
 - [ ] Proyección incremental y virtualización.
 - [ ] Tests diferenciales contra Theatre.js.

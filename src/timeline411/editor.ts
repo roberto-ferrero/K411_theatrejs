@@ -11,7 +11,12 @@ import {decodePropertyPath, encodePropertyPath, getValueAtPath} from './paths'
 import {snapToFrame} from './projection'
 import type {TimelineTransaction as StoreTransaction} from './store'
 import type {KeyframePatch, NewKeyframe} from './store'
+import type {NewTimelineEventCue} from './store'
 import type {Timeline411} from './timeline'
+import type {
+  TimelineEventCueData,
+  TimelineEventFamilyAddress,
+} from './eventTracks'
 import {
   isTimelinePropertyRef,
   TimelineKeyframe,
@@ -357,6 +362,53 @@ export class TimelineEditorTransaction {
     this.transaction.setBezierInterpolation(address, handles)
   }
 
+  addEventFamily(
+    sheetId: string,
+    label: string,
+  ): TimelineEventFamilyAddress {
+    assertSheetBelongsToTimeline(this.timeline, sheetId)
+    return this.transaction.addEventFamily(sheetId, label)
+  }
+
+  renameEventFamily(
+    address: TimelineEventFamilyAddress,
+    label: string,
+  ): void {
+    assertSheetBelongsToTimeline(this.timeline, address.sheetId)
+    this.transaction.renameEventFamily(address, label)
+  }
+
+  removeEventFamily(address: TimelineEventFamilyAddress): void {
+    assertSheetBelongsToTimeline(this.timeline, address.sheetId)
+    this.transaction.removeEventFamily(address)
+  }
+
+  addEventCue(
+    address: TimelineEventFamilyAddress,
+    cue: NewTimelineEventCue,
+  ): KeyframeAddress {
+    assertSheetBelongsToTimeline(this.timeline, address.sheetId)
+    return this.transaction.addEventCue(address, {
+      ...cue,
+      position: snapAndValidatePosition(
+        this.timeline,
+        address.sheetId,
+        cue.position,
+      ),
+    })
+  }
+
+  updateEventCue(
+    address: KeyframeAddress,
+    cue: TimelineEventCueData,
+  ): void {
+    this.transaction.updateEventCue(address, cue)
+  }
+
+  removeEventCue(address: KeyframeAddress): void {
+    this.transaction.removeEventCue(address)
+  }
+
   setDuration(sheetId: string, duration: number): void {
     this.transaction.setLength(sheetId, duration)
   }
@@ -498,6 +550,15 @@ function assertPropertyBelongsToTimeline(
     property.object.composition.timeline !== timeline
   ) {
     throw new Error('La referencia de propiedad pertenece a otro timeline')
+  }
+}
+
+function assertSheetBelongsToTimeline(
+  timeline: Timeline411,
+  sheetId: string,
+): void {
+  if (!timeline.document.sheetsById[sheetId]) {
+    throw new Error(`Sheet desconocida: ${sheetId}`)
   }
 }
 

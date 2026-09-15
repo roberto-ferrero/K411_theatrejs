@@ -15,6 +15,12 @@ describe('compatibilidad Theatre.js 0.7.2', () => {
         trackId: 'Q9IUK1iBde',
         keyframeId: 'CFjUByQoGL',
       }, [0.2, -0.4, 0.75, 1.35])
+      const events = transaction.addEventFamily('Animated scene', 'Explosión')
+      transaction.addEventCue(events, {
+        position: 1.25,
+        label: 'Carga A',
+        payload: {intensity: 3},
+      })
     })
     const expectedMidpoint = timeline.evaluate(
       'Animated scene',

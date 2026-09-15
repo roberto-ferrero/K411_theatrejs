@@ -20,12 +20,12 @@ describe('estado renderer-neutral de filas plegadas', () => {
     expansion.collapse(rotationRow.id)
     expect(
       filterVisibleTimelineRows(rows, expansion).map(({label}) => label),
-    ).toEqual(['Torus Knot', 'rotation', 'wireframe'])
+    ).toEqual(['Eventos', 'Torus Knot', 'rotation', 'wireframe'])
 
     expansion.collapse(objectRow.id)
     expect(
       filterVisibleTimelineRows(rows, expansion).map(({label}) => label),
-    ).toEqual(['Torus Knot'])
+    ).toEqual(['Eventos', 'Torus Knot'])
   })
 
   it('restaura el estado anidado cuando se vuelve a desplegar el objeto', () => {
@@ -37,7 +37,7 @@ describe('estado renderer-neutral de filas plegadas', () => {
     expect(expansion.isCollapsed(rotationRow.id)).toBe(true)
     expect(
       filterVisibleTimelineRows(rows, expansion).map(({label}) => label),
-    ).toEqual(['Torus Knot', 'rotation', 'wireframe'])
+    ).toEqual(['Eventos', 'Torus Knot', 'rotation', 'wireframe'])
   })
 
   it('expone copias, limpia IDs obsoletos y mantiene instancias independientes', () => {

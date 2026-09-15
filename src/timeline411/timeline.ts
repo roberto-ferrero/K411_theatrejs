@@ -18,6 +18,12 @@ import type {
   TimelineIdFactory,
 } from './store'
 import {parseTheatreProjectState} from './validation'
+import {getTimelineEventFamilies} from './eventTracks'
+import type {
+  TimelineEventFamily,
+  TimelineEventTrigger,
+} from './eventTracks'
+import type {PlaybackAdvanceSegment} from './player'
 
 export interface Timeline411Events {
   'document:change': StoreChange
@@ -27,6 +33,7 @@ export interface Timeline411Events {
   'sequence:play': PlaybackState
   'sequence:pause': PlaybackState
   'object:configuration': {sheetId: string; objectKey?: string}
+  'event:trigger': TimelineEventTrigger
 }
 
 export interface Timeline411Options {
@@ -51,6 +58,7 @@ interface ObjectBinding {
 interface PlayerEntry {
   readonly player: TimelinePlayer
   readonly unsubscribe: () => void
+  readonly unsubscribeAdvance: () => void
 }
 
 export class Timeline411 {
@@ -140,6 +148,11 @@ export class Timeline411 {
     return this.document.sheetsById[sheetId]?.sequence?.subUnitsPerUnit ?? 30
   }
 
+  getEventFamilies(sheetId: string): readonly TimelineEventFamily[] {
+    this.assertActive()
+    return getTimelineEventFamilies(this.document, sheetId)
+  }
+
   getPlayer(sheetId: string): TimelinePlayer {
     this.assertActive()
     if (!this.document.sheetsById[sheetId]) {
@@ -159,7 +172,10 @@ export class Timeline411 {
       this.applyBindings(sheetId)
       this.emitEvaluation(sheetId)
     }, false)
-    this.players.set(sheetId, {player, unsubscribe})
+    const unsubscribeAdvance = player.subscribeAdvance((segment) => {
+      this.emitTimelineEvents(sheetId, segment)
+    })
+    this.players.set(sheetId, {player, unsubscribe, unsubscribeAdvance})
     return player
   }
 
@@ -268,9 +284,10 @@ export class Timeline411 {
 
   dispose(): void {
     if (this.disposed) return
-    for (const {player, unsubscribe} of this.players.values()) {
+    for (const {player, unsubscribe, unsubscribeAdvance} of this.players.values()) {
       player.dispose()
       unsubscribe()
+      unsubscribeAdvance()
     }
     this.players.clear()
     this.unsubscribeStore()
@@ -303,9 +320,55 @@ export class Timeline411 {
     for (const listener of [...listeners]) listener()
   }
 
+  private emitTimelineEvents(
+    sheetId: string,
+    segment: PlaybackAdvanceSegment,
+  ): void {
+    const families = getTimelineEventFamilies(this.document, sheetId)
+    const matches = families.flatMap((family, familyIndex) =>
+      family.cues
+        .filter((cue) => eventCueFallsInsideSegment(cue.position, segment))
+        .map((cue) => ({cue, familyIndex})),
+    )
+    matches.sort((left, right) => {
+      const timeOrder = segment.direction === 'forward'
+        ? left.cue.position - right.cue.position
+        : right.cue.position - left.cue.position
+      return timeOrder || left.familyIndex - right.familyIndex ||
+        left.cue.id.localeCompare(right.cue.id)
+    })
+    for (const {cue} of matches) {
+      this.events.emit('event:trigger', {
+        ...cue,
+        type: 'event:trigger',
+        previousPosition: segment.previousPosition,
+        currentPosition: segment.currentPosition,
+        direction: segment.direction,
+        iteration: segment.iteration,
+      })
+    }
+  }
+
   private assertActive(): void {
     if (this.disposed) throw new Error('Timeline 411 ya está disposed')
   }
+}
+
+function eventCueFallsInsideSegment(
+  position: number,
+  segment: PlaybackAdvanceSegment,
+): boolean {
+  const epsilon = 1e-9
+  if (segment.direction === 'forward') {
+    const afterStart = segment.includeStart
+      ? position >= segment.previousPosition - epsilon
+      : position > segment.previousPosition + epsilon
+    return afterStart && position <= segment.currentPosition + epsilon
+  }
+  const beforeStart = segment.includeStart
+    ? position <= segment.previousPosition + epsilon
+    : position < segment.previousPosition - epsilon
+  return beforeStart && position >= segment.currentPosition - epsilon
 }
 
 export function createTimeline(config: CreateTimelineConfig): Timeline411 {

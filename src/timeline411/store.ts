@@ -13,6 +13,19 @@ import type {
 } from './model'
 import {cloneDocument, cloneValue} from './model'
 import {encodePropertyPath, setValueAtPath, unsetValueAtPath} from './paths'
+import {
+  decodeTimelineEventCue,
+  encodeTimelineEventCue,
+  getTimelineEventFamilies,
+  getTimelineEventFamily,
+  timelineEventFamilyLabelPath,
+  timelineEventFamilyPath,
+  timelineEventsObjectKey,
+} from './eventTracks'
+import type {
+  TimelineEventCueData,
+  TimelineEventFamilyAddress,
+} from './eventTracks'
 import {validateTheatreProjectState} from './validation'
 
 export type StoreChangeKind =
@@ -73,8 +86,21 @@ export interface TimelineTransaction {
     address: KeyframeAddress,
     handles: CubicBezierHandles,
   ): void
+  addEventFamily(sheetId: string, label: string): TimelineEventFamilyAddress
+  renameEventFamily(address: TimelineEventFamilyAddress, label: string): void
+  removeEventFamily(address: TimelineEventFamilyAddress): void
+  addEventCue(
+    address: TimelineEventFamilyAddress,
+    cue: NewTimelineEventCue,
+  ): KeyframeAddress
+  updateEventCue(address: KeyframeAddress, cue: TimelineEventCueData): void
+  removeEventCue(address: KeyframeAddress): void
   setLength(sheetId: string, length: number): void
   setFps(sheetId: string, fps: number): void
+}
+
+export interface NewTimelineEventCue extends TimelineEventCueData {
+  readonly position: number
 }
 
 export interface EditingGesture {
@@ -516,6 +542,136 @@ class TimelineTransactionImplementation implements TimelineTransaction {
     right.handles[1] = handles[3]
   }
 
+  addEventFamily(
+    sheetId: string,
+    requestedLabel: string,
+  ): TimelineEventFamilyAddress {
+    const label = sanitizeEventFamilyLabel(requestedLabel)
+    if (
+      getTimelineEventFamiliesFromDraft(this.draft, sheetId).some(
+        (family) => family.label.toLocaleLowerCase() === label.toLocaleLowerCase(),
+      )
+    ) {
+      throw new Error(`Ya existe una familia de eventos llamada ${label}`)
+    }
+    const familyId = this.idFactory('eventFamily')
+    const path = timelineEventFamilyPath(familyId)
+    this.sequenceProperty(
+      {sheetId, objectKey: timelineEventsObjectKey, path},
+      {debugName: `Timeline 411 Events:${label}`},
+    )
+    this.setStaticValue(
+      {
+        sheetId,
+        objectKey: timelineEventsObjectKey,
+        path: timelineEventFamilyLabelPath(familyId),
+      },
+      label,
+    )
+    return {sheetId, familyId}
+  }
+
+  renameEventFamily(
+    address: TimelineEventFamilyAddress,
+    requestedLabel: string,
+  ): void {
+    const family = requireTimelineEventFamily(this.draft, address)
+    const label = sanitizeEventFamilyLabel(requestedLabel)
+    if (
+      getTimelineEventFamiliesFromDraft(this.draft, address.sheetId).some(
+        (candidate) =>
+          candidate.familyId !== address.familyId &&
+          candidate.label.toLocaleLowerCase() === label.toLocaleLowerCase(),
+      )
+    ) {
+      throw new Error(`Ya existe una familia de eventos llamada ${label}`)
+    }
+    this.setStaticValue(
+      {
+        sheetId: address.sheetId,
+        objectKey: timelineEventsObjectKey,
+        path: timelineEventFamilyLabelPath(address.familyId),
+      },
+      label,
+    )
+    const track = getTrack(this.draft, {
+      sheetId: address.sheetId,
+      objectKey: timelineEventsObjectKey,
+      trackId: family.trackId,
+    })
+    track.__debugName = `Timeline 411 Events:${label}`
+  }
+
+  removeEventFamily(address: TimelineEventFamilyAddress): void {
+    const family = requireTimelineEventFamily(this.draft, address)
+    this.removeTrack({
+      sheetId: address.sheetId,
+      objectKey: timelineEventsObjectKey,
+      trackId: family.trackId,
+    })
+    this.unsetStaticValue({
+      sheetId: address.sheetId,
+      objectKey: timelineEventsObjectKey,
+      path: timelineEventFamilyLabelPath(address.familyId),
+    })
+    cleanupEmptyTimelineEventsObject(this.draft, address.sheetId)
+  }
+
+  addEventCue(
+    address: TimelineEventFamilyAddress,
+    cue: NewTimelineEventCue,
+  ): KeyframeAddress {
+    const family = requireTimelineEventFamily(this.draft, address)
+    const sequence = this.draft.sheetsById[address.sheetId]?.sequence
+    if (
+      !sequence ||
+      !Number.isFinite(cue.position) ||
+      cue.position < 0 ||
+      cue.position > sequence.length
+    ) {
+      throw new Error('La posición del evento queda fuera de la secuencia')
+    }
+    const trackAddress: TrackAddress = {
+      sheetId: address.sheetId,
+      objectKey: timelineEventsObjectKey,
+      trackId: family.trackId,
+    }
+    const track = getTrack(this.draft, trackAddress)
+    if (
+      track.keyframes.some(
+        (candidate) => Math.abs(candidate.position - cue.position) < 1e-6,
+      )
+    ) {
+      throw new Error('Ya existe un evento de esta familia en ese frame')
+    }
+    const keyframeId = this.addKeyframe(trackAddress, {
+      position: cue.position,
+      value: encodeTimelineEventCue(cue),
+      handles: [1, 1, 0, 0],
+      connectedRight: false,
+      type: 'hold',
+    })
+    return {...trackAddress, keyframeId}
+  }
+
+  updateEventCue(address: KeyframeAddress, cue: TimelineEventCueData): void {
+    const family = requireTimelineEventFamilyByKeyframe(this.draft, address)
+    const track = getTrack(this.draft, address)
+    const keyframe = getKeyframe(track, address.keyframeId)
+    const current = decodeTimelineEventCue(keyframe.value)
+    keyframe.value = encodeTimelineEventCue({...current, ...cue})
+    keyframe.connectedRight = false
+    keyframe.type = 'hold'
+    if (family.trackId !== address.trackId) {
+      throw new Error('El evento no pertenece a la familia indicada')
+    }
+  }
+
+  removeEventCue(address: KeyframeAddress): void {
+    requireTimelineEventFamilyByKeyframe(this.draft, address)
+    this.removeKeyframe(address)
+  }
+
   setLength(sheetId: string, length: number): void {
     if (!Number.isFinite(length) || length <= 0) {
       throw new Error('La duración debe ser mayor que cero')
@@ -555,6 +711,63 @@ function assertCubicBezierHandles(handles: CubicBezierHandles): void {
   }
   if (handles[0] < 0 || handles[0] > 1 || handles[2] < 0 || handles[2] > 1) {
     throw new Error('Los controles temporales x1 y x2 deben estar entre 0 y 1')
+  }
+}
+
+function getTimelineEventFamiliesFromDraft(
+  document: TimelineDocument,
+  sheetId: string,
+) {
+  return getTimelineEventFamilies(document, sheetId)
+}
+
+function requireTimelineEventFamily(
+  document: TimelineDocument,
+  address: TimelineEventFamilyAddress,
+) {
+  const family = getTimelineEventFamily(document, address)
+  if (!family) {
+    throw new Error(`Familia de eventos desconocida: ${address.familyId}`)
+  }
+  return family
+}
+
+function requireTimelineEventFamilyByKeyframe(
+  document: TimelineDocument,
+  address: KeyframeAddress,
+) {
+  if (address.objectKey !== timelineEventsObjectKey) {
+    throw new Error('El keyframe no es un evento de Timeline 411')
+  }
+  const family = getTimelineEventFamilies(document, address.sheetId).find(
+    ({trackId}) => trackId === address.trackId,
+  )
+  if (!family) throw new Error(`Track de eventos desconocido: ${address.trackId}`)
+  return family
+}
+
+function sanitizeEventFamilyLabel(requestedLabel: string): string {
+  const label = requestedLabel.trim()
+  if (label.length === 0) throw new Error('La familia de eventos necesita un nombre')
+  if (label.length > 80) {
+    throw new Error('El nombre de la familia no puede superar 80 caracteres')
+  }
+  return label
+}
+
+function cleanupEmptyTimelineEventsObject(
+  document: TimelineDocument,
+  sheetId: string,
+): void {
+  const sheet = document.sheetsById[sheetId]
+  if (!sheet) return
+  const objectTracks = sheet.sequence?.tracksByObject[timelineEventsObjectKey]
+  if (objectTracks && Object.keys(objectTracks.trackData).length === 0) {
+    delete sheet.sequence?.tracksByObject[timelineEventsObjectKey]
+  }
+  const staticValues = sheet.staticOverrides.byObject[timelineEventsObjectKey]
+  if (staticValues && Object.keys(staticValues).length === 0) {
+    delete sheet.staticOverrides.byObject[timelineEventsObjectKey]
   }
 }
 

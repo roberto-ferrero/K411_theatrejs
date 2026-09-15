@@ -1,5 +1,11 @@
 import './timeline411.css'
 import {BezierCurveEditor} from './bezierEditor'
+import {
+  getTimelineEventFamily,
+  getTimelineEventCue,
+  isTimelineEventCueAddress,
+  isTimelineEventPayload,
+} from './eventTracks'
 import {TypedEventEmitter} from './events'
 import type {
   CubicBezierHandles,
@@ -110,11 +116,16 @@ export class Timeline411HtmlView {
   private keyframeTimeInput?: HTMLInputElement
   private keyframeContext?: HTMLElement
   private interpolationPicker?: HTMLElement
+  private interpolationLabel?: HTMLElement
   private interpolationButton?: HTMLButtonElement
   private interpolationEditButton?: HTMLButtonElement
   private interpolationMenu?: HTMLElement
   private curveEditor?: BezierCurveEditor
   private curveEditorAddress?: KeyframeAddress
+  private eventCueContext?: HTMLElement
+  private eventCueLabelInput?: HTMLInputElement
+  private eventCuePayloadInput?: HTMLInputElement
+  private eventCueEditDirty = false
   private interpolationVisual = getEasingVisualDescriptor('none')
   private interpolationMenuOpen = false
   private resizeObserver?: ResizeObserver
@@ -129,6 +140,8 @@ export class Timeline411HtmlView {
   private durationEditDirty = false
   private keyframeTimeEditDirty = false
   private propertyPickerObjectKey?: string
+  private eventFamilyCreationOpen = false
+  private eventFamilyRenameId?: string
   private marqueeElement?: HTMLElement
   private suppressSurfaceClick = false
   private suppressSurfaceClickTimer?: number
@@ -512,10 +525,56 @@ export class Timeline411HtmlView {
     const interpolationText = document.createElement('span')
     interpolationText.textContent = 'Interpolación:'
     interpolationLabel.append(interpolationText, interpolationPicker)
+    this.interpolationLabel = interpolationLabel
+
+    const eventCueContext = document.createElement('div')
+    eventCueContext.className = 'k411-timeline-event-cue-context'
+    eventCueContext.hidden = true
+    const eventCueLabel = document.createElement('label')
+    eventCueLabel.textContent = 'Etiqueta:'
+    const eventCueLabelInput = document.createElement('input')
+    eventCueLabelInput.type = 'text'
+    eventCueLabelInput.maxLength = 120
+    eventCueLabelInput.placeholder = 'Opcional'
+    eventCueLabelInput.setAttribute('aria-label', 'Etiqueta del evento seleccionado')
+    const eventCuePayload = document.createElement('label')
+    eventCuePayload.textContent = 'Payload:'
+    const eventCuePayloadInput = document.createElement('input')
+    eventCuePayloadInput.type = 'text'
+    eventCuePayloadInput.placeholder = 'JSON opcional'
+    eventCuePayloadInput.setAttribute('aria-label', 'Payload JSON del evento seleccionado')
+    for (const input of [eventCueLabelInput, eventCuePayloadInput]) {
+      input.addEventListener('input', () => {
+        this.eventCueEditDirty = true
+        input.setCustomValidity('')
+      })
+      input.addEventListener('keydown', (event) => {
+        event.stopPropagation()
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          if (this.commitEventCueInputs()) input.blur()
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          this.eventCueEditDirty = false
+          this.updateEventCueInputs(true)
+          input.blur()
+        }
+      })
+      input.addEventListener('blur', () => {
+        if (this.eventCueEditDirty) this.commitEventCueInputs()
+      })
+    }
+    eventCueLabel.appendChild(eventCueLabelInput)
+    eventCuePayload.appendChild(eventCuePayloadInput)
+    eventCueContext.append(eventCueLabel, eventCuePayload)
+    this.eventCueContext = eventCueContext
+    this.eventCueLabelInput = eventCueLabelInput
+    this.eventCuePayloadInput = eventCuePayloadInput
     keyframeContext.append(
       keyframeContextTitle,
       keyframeTime,
       interpolationLabel,
+      eventCueContext,
     )
     this.keyframeContext = keyframeContext
     this.updateKeyframeTimeInput(true)
@@ -538,6 +597,7 @@ export class Timeline411HtmlView {
     this.pruneInvalidKeyframeSelection()
     this.updateDurationInput()
     this.updateKeyframeTimeInput()
+    this.updateEventCueInputs()
     this.updateInterpolationPicker()
     const allRows = buildTimelineRows(this.timeline.document, this.sheetId)
     this.rowExpansionState.retain(
@@ -618,7 +678,7 @@ export class Timeline411HtmlView {
       lane.dataset.rowId = row.id
       lane.style.top = `${y}px`
       lane.style.height = `${rowHeight}px`
-      if (isPrimitivePropertyRow(row)) {
+      if (isEditableTimelineTrackRow(row)) {
         lane.addEventListener('dblclick', (event) => {
           event.preventDefault()
           this.toggleKeyframe(row, this.timeFromClientX(event.clientX, true))
@@ -627,7 +687,7 @@ export class Timeline411HtmlView {
       this.surface?.appendChild(lane)
 
       const keyframes = collectRowKeyframes(this.timeline.document, this.sheetId, row)
-      if (row.trackId) {
+      if (row.trackId && row.kind !== 'eventTrack') {
         for (let keyframeIndex = 0; keyframeIndex < keyframes.length - 1; keyframeIndex += 1) {
           const left = keyframes[keyframeIndex]
           const right = keyframes[keyframeIndex + 1]
@@ -648,7 +708,7 @@ export class Timeline411HtmlView {
           }
           svg.appendChild(connector)
         }
-      } else {
+      } else if (row.kind !== 'eventGroup' && row.kind !== 'eventTrack') {
         for (const interval of collectRowConnectorIntervals(
           this.timeline.document,
           this.sheetId,
@@ -696,6 +756,9 @@ export class Timeline411HtmlView {
         const button = document.createElement('button')
         button.type = 'button'
         button.className = 'k411-timeline-keyframe'
+        if (row.kind === 'eventTrack') {
+          button.classList.add('k411-timeline-keyframe--event')
+        }
         if (this.keyframeSelection.has(address)) {
           button.classList.add('k411-timeline-keyframe--selected')
           button.setAttribute('aria-pressed', 'true')
@@ -707,7 +770,12 @@ export class Timeline411HtmlView {
         }
         button.style.left = `${x}px`
         button.style.top = `${y + rowHeight / 2}px`
-        button.title = `${this.getRowDisplayLabel(row)}: ${keyframe.position.toFixed(3)}s`
+        const eventCue = row.kind === 'eventTrack'
+          ? getTimelineEventCue(this.timeline.document, address)
+          : undefined
+        button.title = eventCue?.label
+          ? `${row.label} · ${eventCue.label}: ${keyframe.position.toFixed(3)}s`
+          : `${this.getRowDisplayLabel(row)}: ${keyframe.position.toFixed(3)}s`
         button.setAttribute('aria-label', button.title)
         button.addEventListener('pointerdown', (event) =>
           this.startKeyframeDrag(event, address),
@@ -763,10 +831,31 @@ export class Timeline411HtmlView {
     const label = document.createElement('span')
     label.className = 'k411-timeline-tree-row__label'
     label.textContent = this.getRowDisplayLabel(row)
+    if (row.kind === 'eventTrack') {
+      label.title = 'Doble clic para renombrar la familia de eventos'
+      label.addEventListener('dblclick', (event) => {
+        event.stopPropagation()
+        this.eventFamilyRenameId = row.eventFamilyId
+        this.eventFamilyCreationOpen = false
+        this.render()
+        this.treeRowElements
+          .get(row.id)
+          ?.querySelector<HTMLInputElement>(
+            '.k411-timeline-tree-row__event-family-name',
+          )
+          ?.focus({preventScroll: true})
+      })
+    }
     const valueCell = document.createElement('span')
     valueCell.className = 'k411-timeline-tree-row__value'
-    element.append(icon, label, valueCell)
-    if (isPrimitivePropertyRow(row)) {
+    element.append(icon)
+    if (row.kind === 'eventTrack' && this.eventFamilyRenameId === row.eventFamilyId) {
+      element.appendChild(this.createEventFamilyNameInput(row, 'rename'))
+    } else {
+      element.appendChild(label)
+    }
+    element.appendChild(valueCell)
+    if (isEditableTimelineTrackRow(row)) {
       const keyframeToggle = document.createElement('button')
       keyframeToggle.type = 'button'
       keyframeToggle.className = 'k411-timeline-tree-row__keyframe-toggle'
@@ -781,13 +870,185 @@ export class Timeline411HtmlView {
       element.appendChild(keyframeToggle)
     } else if (row.kind === 'object') {
       this.appendPropertyCatalogControls(element, row)
+    } else if (row.kind === 'eventGroup') {
+      this.appendEventFamilyCreationControls(element, row)
     }
-    if (row.kind !== 'object') {
+    if (row.kind === 'eventTrack') {
+      this.appendEventFamilyRemovalControl(element, row)
+    } else if (row.kind !== 'object' && row.kind !== 'eventGroup') {
       this.appendPropertyRemovalControl(element, row)
     }
     this.treeRowElements.set(row.id, element)
     this.renderRowValue(valueCell, row, value)
     return element
+  }
+
+  private appendEventFamilyCreationControls(
+    element: HTMLElement,
+    row: TimelineRow,
+  ): void {
+    if (this.eventFamilyCreationOpen) {
+      element.appendChild(this.createEventFamilyNameInput(row, 'create'))
+    }
+
+    const addButton = document.createElement('button')
+    addButton.type = 'button'
+    addButton.className = 'k411-timeline-tree-row__property-add k411-timeline-tree-row__event-family-add'
+    addButton.textContent = this.eventFamilyCreationOpen ? '×' : '+'
+    addButton.setAttribute('aria-expanded', String(this.eventFamilyCreationOpen))
+    addButton.setAttribute(
+      'aria-label',
+      this.eventFamilyCreationOpen
+        ? 'Cancelar creación de familia de eventos'
+        : 'Añadir familia de eventos',
+    )
+    addButton.title = this.eventFamilyCreationOpen
+      ? 'Cancelar'
+      : 'Añadir familia de eventos'
+    addButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      this.eventFamilyCreationOpen = !this.eventFamilyCreationOpen
+      this.eventFamilyRenameId = undefined
+      this.render()
+      const rowElement = this.treeRowElements.get(row.id)
+      if (this.eventFamilyCreationOpen) {
+        rowElement
+          ?.querySelector<HTMLInputElement>(
+            '.k411-timeline-tree-row__event-family-name',
+          )
+          ?.focus({preventScroll: true})
+      } else {
+        rowElement
+          ?.querySelector<HTMLButtonElement>(
+            '.k411-timeline-tree-row__event-family-add',
+          )
+          ?.focus({preventScroll: true})
+      }
+    })
+    element.appendChild(addButton)
+  }
+
+  private createEventFamilyNameInput(
+    row: TimelineRow,
+    mode: 'create' | 'rename',
+  ): HTMLInputElement {
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'k411-timeline-tree-row__event-family-name'
+    input.maxLength = 80
+    input.placeholder = mode === 'create' ? 'Nombre de familia…' : ''
+    input.value = mode === 'rename' ? row.label : ''
+    input.setAttribute(
+      'aria-label',
+      mode === 'create'
+        ? 'Nombre de la nueva familia de eventos'
+        : `Renombrar familia ${row.label}`,
+    )
+    input.addEventListener('click', (event) => event.stopPropagation())
+    input.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        this.eventFamilyCreationOpen = false
+        this.eventFamilyRenameId = undefined
+        this.render()
+        return
+      }
+      if (event.key !== 'Enter') return
+      event.preventDefault()
+      this.commitEventFamilyName(row, mode, input)
+    })
+    if (mode === 'rename') {
+      input.addEventListener('blur', () => {
+        if (this.eventFamilyRenameId === row.eventFamilyId) {
+          this.commitEventFamilyName(row, mode, input)
+        }
+      })
+    }
+    return input
+  }
+
+  private commitEventFamilyName(
+    row: TimelineRow,
+    mode: 'create' | 'rename',
+    input: HTMLInputElement,
+  ): boolean {
+    const label = input.value.trim()
+    if (!label) {
+      input.setCustomValidity('El nombre de la familia es obligatorio')
+      input.reportValidity()
+      return false
+    }
+    input.setCustomValidity('')
+    const previousCreationOpen = this.eventFamilyCreationOpen
+    const previousRenameId = this.eventFamilyRenameId
+    this.eventFamilyCreationOpen = false
+    this.eventFamilyRenameId = undefined
+    try {
+      this.timeline.editor.transaction((transaction) => {
+        if (mode === 'create') transaction.addEventFamily(this.sheetId, label)
+        else if (row.eventFamilyId) {
+          transaction.renameEventFamily(
+            {sheetId: this.sheetId, familyId: row.eventFamilyId},
+            label,
+          )
+        }
+      }, {
+        label: mode === 'create'
+          ? `Añadir familia de eventos ${label}`
+          : `Renombrar familia de eventos a ${label}`,
+      })
+    } catch (error) {
+      this.eventFamilyCreationOpen = previousCreationOpen
+      this.eventFamilyRenameId = previousRenameId
+      input.setCustomValidity(
+        error instanceof Error ? error.message : 'No se pudo guardar la familia',
+      )
+      input.reportValidity()
+      return false
+    }
+    this.render()
+    return true
+  }
+
+  private appendEventFamilyRemovalControl(
+    element: HTMLElement,
+    row: TimelineRow,
+  ): void {
+    if (!row.eventFamilyId) return
+    const removeButton = document.createElement('button')
+    removeButton.type = 'button'
+    removeButton.className = 'k411-timeline-tree-row__property-remove k411-timeline-tree-row__event-family-remove'
+    removeButton.textContent = '−'
+    removeButton.setAttribute('aria-label', `Quitar familia de eventos ${row.label}`)
+    removeButton.title = `Quitar familia ${row.label}`
+    removeButton.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const family = getTimelineEventFamily(this.timeline.document, {
+        sheetId: this.sheetId,
+        familyId: row.eventFamilyId!,
+      })
+      if (
+        family?.cues.length &&
+        !window.confirm(
+          `La familia "${row.label}" contiene ${family.cues.length} evento(s). ` +
+          '¿Quieres eliminarla junto con todos ellos?',
+        )
+      ) return
+      try {
+        this.timeline.editor.transaction(
+          (transaction) => transaction.removeEventFamily({
+            sheetId: this.sheetId,
+            familyId: row.eventFamilyId!,
+          }),
+          {label: `Eliminar familia de eventos ${row.label}`},
+        )
+        this.pruneInvalidKeyframeSelection()
+      } catch (error) {
+        console.warn(error)
+      }
+    })
+    element.appendChild(removeButton)
   }
 
   private createRowDisclosure(row: TimelineRow): HTMLButtonElement {
@@ -996,6 +1257,15 @@ export class Timeline411HtmlView {
     ) {
       this.closeInterpolationMenu()
     }
+    if (
+      this.eventFamilyCreationOpen &&
+      (!target || !target.closest(
+        '.k411-timeline-tree-row__event-family-name, .k411-timeline-tree-row__event-family-add',
+      ))
+    ) {
+      this.eventFamilyCreationOpen = false
+      this.render()
+    }
     if (!this.propertyPickerObjectKey) return
     if (
       target &&
@@ -1105,6 +1375,7 @@ export class Timeline411HtmlView {
       this.keyframeTimeInput.setCustomValidity('')
       if (this.interpolationButton) this.interpolationButton.disabled = true
       this.closeInterpolationMenu()
+      if (this.eventCueContext) this.eventCueContext.hidden = true
       return
     }
     if (this.keyframeContext) this.keyframeContext.hidden = false
@@ -1121,10 +1392,92 @@ export class Timeline411HtmlView {
     this.keyframeTimeInput.value = formatKeyframeTime(keyframe.position)
   }
 
+  private updateEventCueInputs(force = false): void {
+    if (
+      !this.eventCueContext ||
+      !this.eventCueLabelInput ||
+      !this.eventCuePayloadInput
+    ) return
+    const selected = this.keyframeSelection.size === 1 ? this.selected : undefined
+    const cue = selected
+      ? getTimelineEventCue(this.timeline.document, selected)
+      : undefined
+    this.eventCueContext.hidden = !cue
+    if (this.interpolationLabel) this.interpolationLabel.hidden = Boolean(cue)
+    if (!cue) {
+      this.eventCueEditDirty = false
+      this.eventCueLabelInput.value = ''
+      this.eventCuePayloadInput.value = ''
+      this.eventCuePayloadInput.setCustomValidity('')
+      return
+    }
+    if (
+      !force &&
+      this.eventCueEditDirty &&
+      (
+        document.activeElement === this.eventCueLabelInput ||
+        document.activeElement === this.eventCuePayloadInput
+      )
+    ) return
+    this.eventCueLabelInput.value = cue.label ?? ''
+    this.eventCuePayloadInput.value = typeof cue.payload === 'undefined'
+      ? ''
+      : JSON.stringify(cue.payload)
+    this.eventCueLabelInput.setCustomValidity('')
+    this.eventCuePayloadInput.setCustomValidity('')
+  }
+
+  private commitEventCueInputs(): boolean {
+    if (
+      !this.eventCueLabelInput ||
+      !this.eventCuePayloadInput ||
+      this.keyframeSelection.size !== 1 ||
+      !this.selected ||
+      !isTimelineEventCueAddress(this.timeline.document, this.selected)
+    ) return false
+    const payloadText = this.eventCuePayloadInput.value.trim()
+    let payload: SerializableValue | undefined
+    if (payloadText !== '') {
+      try {
+        const parsed: unknown = JSON.parse(payloadText)
+        if (!isTimelineEventPayload(parsed)) {
+          throw new Error('El payload no pertenece al subconjunto JSON admitido')
+        }
+        payload = parsed
+      } catch {
+        this.eventCuePayloadInput.setCustomValidity(
+          'Introduce JSON válido sin arrays ni null',
+        )
+        this.eventCuePayloadInput.reportValidity()
+        return false
+      }
+    }
+    const selected = this.selected
+    this.eventCueEditDirty = false
+    this.eventCuePayloadInput.setCustomValidity('')
+    try {
+      this.timeline.editor.transaction(
+        (transaction) => transaction.updateEventCue(selected, {
+          label: this.eventCueLabelInput?.value.trim() || undefined,
+          payload,
+        }),
+        {label: 'Editar evento'},
+      )
+    } catch (error) {
+      this.eventCueEditDirty = true
+      console.warn(error)
+      return false
+    }
+    this.updateEventCueInputs(true)
+    return true
+  }
+
   private updateInterpolationPicker(): void {
     if (!this.interpolationButton || !this.interpolationMenu) return
     const documentVisual =
-      this.keyframeSelection.size === 1 && this.selected
+      this.keyframeSelection.size === 1 &&
+      this.selected &&
+      !isTimelineEventCueAddress(this.timeline.document, this.selected)
         ? getKeyframeEasingVisual(this.timeline.document, this.selected)
         : getEasingVisualDescriptor('none')
     this.interpolationVisual =
@@ -1474,6 +1827,12 @@ export class Timeline411HtmlView {
     row: TimelineRow,
     projection: TimelineRowValueProjection,
   ): void {
+    if (row.kind === 'eventGroup' || row.kind === 'eventTrack') {
+      cell.dataset.valueSignature = 'event'
+      cell.className = 'k411-timeline-tree-row__value'
+      cell.replaceChildren()
+      return
+    }
     if (cell.contains(document.activeElement)) return
     const property = this.getPropertyRef(row)
     const formatted = formatPropertyValue(projection.value, property?.config)
@@ -1762,6 +2121,7 @@ export class Timeline411HtmlView {
     if (render) this.render()
     else {
       this.updateKeyframeTimeInput(true)
+      this.updateEventCueInputs(true)
       this.updateInterpolationPicker()
     }
     this.root?.focus({preventScroll: true})
@@ -1778,6 +2138,7 @@ export class Timeline411HtmlView {
     if (!this.keyframeSelection.makePrimary(address)) return
     this.emitKeyframeSelectionChange()
     this.updateKeyframeTimeInput(true)
+    this.updateEventCueInputs(true)
     this.updateInterpolationPicker()
   }
 
@@ -1808,14 +2169,52 @@ export class Timeline411HtmlView {
         element.setAttribute('aria-pressed', 'false')
       })
     this.updateKeyframeTimeInput(true)
+    this.updateEventCueInputs(true)
     this.updateInterpolationPicker()
     this.emitKeyframeSelectionChange()
     this.root?.focus({preventScroll: true})
   }
 
   private toggleKeyframe(row: TimelineRow, requestedTime: number): void {
-    if (!isPrimitivePropertyRow(row)) return
+    if (!isEditableTimelineTrackRow(row)) return
     const time = snapToFrame(requestedTime, this.timeline.getFps(this.sheetId))
+    if (row.kind === 'eventTrack' && row.eventFamilyId && row.trackId) {
+      const existing = getTrack(this.timeline.document, {
+        sheetId: this.sheetId,
+        objectKey: row.objectKey,
+        trackId: row.trackId,
+      }).keyframes.find(
+        (keyframe) => Math.abs(keyframe.position - time) < 1e-6,
+      )
+      let created: KeyframeAddress | undefined
+      try {
+        this.timeline.editor.transaction((transaction) => {
+          if (existing) {
+            transaction.removeEventCue({
+              sheetId: this.sheetId,
+              objectKey: row.objectKey,
+              trackId: row.trackId!,
+              keyframeId: existing.id,
+            })
+          } else {
+            created = transaction.addEventCue(
+              {sheetId: this.sheetId, familyId: row.eventFamilyId!},
+              {position: time},
+            )
+          }
+        }, {
+          label: existing
+            ? `Quitar evento de ${row.label}`
+            : `Añadir evento a ${row.label}`,
+        })
+      } catch (error) {
+        console.warn(error)
+        return
+      }
+      this.timeline.getPlayer(this.sheetId).seek(time)
+      this.selectKeyframe(created)
+      return
+    }
     const target =
       this.getPropertyRef(row) ??
       ({
@@ -2382,7 +2781,13 @@ export class Timeline411HtmlView {
       event.preventDefault()
       const selected = [...this.keyframeSelection.values]
       this.timeline.editor.transaction((transaction) => {
-        for (const address of selected) transaction.removeKeyframe(address)
+        for (const address of selected) {
+          if (isTimelineEventCueAddress(this.timeline.document, address)) {
+            transaction.removeEventCue(address)
+          } else {
+            transaction.removeKeyframe(address)
+          }
+        }
       }, {
         label: selected.length === 1
           ? 'Eliminar keyframe'
@@ -2615,6 +3020,10 @@ function isPrimitivePropertyRow(row: TimelineRow): boolean {
     row.path.length > 0 &&
     (row.kind === 'track' || row.kind === 'static')
   )
+}
+
+function isEditableTimelineTrackRow(row: TimelineRow): boolean {
+  return isPrimitivePropertyRow(row) || row.kind === 'eventTrack'
 }
 
 function samePath(

@@ -1,6 +1,7 @@
 export * from './easing'
 export * from './easingVisuals'
 export * from './editor'
+export * from './eventTracks'
 export * from './evaluator'
 export * from './htmlView'
 export * from './marquee'

@@ -60,7 +60,8 @@ export class TimelineRowExpansionState implements TimelineRowExpansionReader {
 }
 
 export function isTimelineRowCollapsible(row: TimelineRow): boolean {
-  return row.hasChildren && (row.kind === 'object' || row.kind === 'group')
+  return row.hasChildren &&
+    (row.kind === 'eventGroup' || row.kind === 'object' || row.kind === 'group')
 }
 
 export function filterVisibleTimelineRows(
